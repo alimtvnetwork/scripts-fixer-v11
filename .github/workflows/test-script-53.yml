@@ -1,0 +1,59 @@
+name: Test Script 53 (script-fixer)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Runs the script 53 test harness on every push and PR. Captures the JSON
+# output as a build artifact and surfaces pass/fail via a status badge.
+#
+# Notes:
+#   - Runs on windows-latest (the harness needs HKCR / HKCU registry access).
+#   - The harness exit codes (0 = pass, 1 = fail, 2 = pre-flight failure)
+#     are honored directly; any non-zero will mark the workflow as failed,
+#     which is what drives the badge color in README.
+#   - Script 53 is INSTALLED before the harness runs (otherwise pre-flight
+#     bails with exit 2 and the badge stays red forever).
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/53-script-fixer-context-menu/**'
+      - '.github/workflows/test-script-53.yml'
+  pull_request:
+    paths:
+      - 'scripts/53-script-fixer-context-menu/**'
+      - '.github/workflows/test-script-53.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: run-tests.ps1 -Json
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install script 53 (registry context menu)
+        shell: pwsh
+        run: |
+          .\run.ps1 -I 53 install
+
+      - name: Run test harness (JSON)
+        shell: pwsh
+        run: |
+          .\run.ps1 -I 53 verify -Json -JsonPath "$env:RUNNER_TEMP\script-53-results.json" -NoColor
+          Write-Host "Exit code: $LASTEXITCODE"
+          exit $LASTEXITCODE
+
+      - name: Upload JSON results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: script-53-results
+          path: ${{ runner.temp }}/script-53-results.json
+          if-no-files-found: warn
+          retention-days: 30

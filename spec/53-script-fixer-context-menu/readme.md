@@ -1,0 +1,828 @@
+<!-- spec-header:v1 -->
+<div align="center">
+
+<img src="../../assets/icon-v1-rocket-stack.svg" alt="Spec 53 — Script Fixer Context Menu" width="128" height="128"/>
+
+# Spec 53 — Script Fixer Context Menu
+
+**Part of the Dev Tools Setup Scripts toolkit**
+
+[![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white)](https://github.com/alimtvnetwork/gitmap-v6#requirements)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white)](https://github.com/alimtvnetwork/gitmap-v6#requirements)
+[![Script](https://img.shields.io/badge/Script-53-8b5cf6)](https://github.com/alimtvnetwork/gitmap-v6/blob/main/scripts/registry.json)
+[![License](https://img.shields.io/badge/License-MIT-eab308)](https://github.com/alimtvnetwork/gitmap-v6/blob/main/LICENSE)
+[![Version](https://img.shields.io/badge/Version-v0.70.0-f97316)](https://github.com/alimtvnetwork/gitmap-v6/blob/main/scripts/version.json)
+[![Changelog](https://img.shields.io/badge/Changelog-Latest-ec4899)](https://github.com/alimtvnetwork/gitmap-v6/blob/main/changelog.md)
+[![Repo](https://img.shields.io/badge/Repo-gitmap--v6-22c55e?logo=github&logoColor=white)](https://github.com/alimtvnetwork/gitmap-v6)
+
+*Mandatory spec header — see [spec/00-spec-writing-guide](../00-spec-writing-guide/readme.md).*
+
+</div>
+
+---
+
+# Specification: Script Fixer Context Menu (script 53)
+
+> **Status:** Implemented in `scripts/53-script-fixer-context-menu/` as of project version **v0.56.0**. Dual-leaf confirmation prompt + Shift-bypass added in **v0.58.0** (§7.4 + §17). Reusable wrapper extended to script 54 in **v0.59.0** (§7.4.3). This document is the authoritative design contract — any future change to the script must update this spec first.
+
+---
+
+## 1. Purpose
+
+Provide an **opt-in** Windows Explorer right-click cascading submenu titled
+**"Script Fixer vX.Y.Z"** that lists every script in this repository, grouped
+into categories, and launches the selected script in an elevated PowerShell
+terminal.
+
+The menu lowers the activation cost of running repair / install scripts when
+they are most needed (Explorer is already open, the user is already
+frustrated, and remembering numeric script IDs is friction).
+
+---
+
+## 2. Goals & Non-Goals
+
+### 2.1 Goals
+
+| # | Goal | Acceptance criterion |
+|---|------|----------------------|
+| G1 | One-click access to every script | Every entry in `scripts/registry.json` appears in the menu, in the correct category |
+| G2 | Discoverable version | The top-level label embeds the project version, e.g. `Script Fixer v0.56.0` |
+| G3 | Strictly opt-in | Nothing is written to the registry until the user explicitly runs `.
+un.ps1 install` |
+| G4 | Clean uninstall | `.
+un.ps1 uninstall` removes every key created by this script across every scope, in any order, repeatable safely |
+| G5 | Idempotent install | Running `install` twice in a row produces an identical registry state (no orphans, no duplicates) |
+| G6 | Elevation in one prompt | Each launch shows the UAC shield once and the resulting shell process is already elevated |
+| G7 | Self-updating from `registry.json` | Adding a new script + running `refresh` exposes it in the menu without code edits |
+| G8 | Visible failure paths | Every registry/file/path failure logs the exact path and reason (CODE RED rule) |
+
+### 2.2 Non-Goals
+
+- **No automatic installation.** Bundle scripts (e.g. script 12) MUST NOT silently install this menu.
+- **No DLL / native shell extension.** Pure registry implementation; no compiled component.
+- **No Windows 11 modern context menu.** Only the classic context menu (which Win 11 still surfaces under "Show more options"). A future spec may cover the modern menu.
+- **No per-user installation.** The menu installs into `HKCR` (machine-wide) only. A per-user variant (`HKCU\Software\Classes`) is out of scope for v1.
+- **No GUI.** All interaction is via `.
+un.ps1` commands.
+
+---
+
+## 3. Locked-in Design Decisions
+
+These were chosen by the user via clarifying questions and are now contractual:
+
+| # | Decision | Value |
+|---|----------|-------|
+| D1 | Menu scope | **Everywhere** — files, folders, folder background, Desktop background (4 registry roots) |
+| D2 | Categorization source | **Auto** from `scripts/registry.json` with config-driven label map and heuristic fallback |
+| D3 | Terminal | **`pwsh` 7+** preferred, fallback to **`powershell` 5.1** |
+| D4 | Elevation | **Always elevated** via UAC (`HasLUAShield` value + Windows' built-in `runas` resolution) |
+| D5 | Version display | **Top-level label only**: `Script Fixer v{version}` — leaf labels stay short |
+
+---
+
+## 4. Terminology
+
+| Term | Meaning |
+|------|---------|
+| **Scope** | One of the four shell roots where the menu can appear (file / directory / background / desktop) |
+| **Top-level entry** | The cascading parent shown directly in Explorer's right-click menu |
+| **Category** | A second-level cascading parent (e.g. "Databases", "Languages & Runtimes") |
+| **Leaf** | A clickable terminal launcher whose `command` runs `run.ps1 -I <id>` |
+| **Singleton category** | A category that contains exactly one leaf — flattened to the top level so users don't traverse a one-item submenu |
+| **Repo root** | The directory containing the top-level `run.ps1` dispatcher (resolved at install time, baked into each leaf's command) |
+
+---
+
+## 5. User Stories
+
+| ID | As a... | I want... | So that... |
+|----|---------|-----------|------------|
+| US1 | repo user | to right-click anywhere in Explorer and see "Script Fixer v0.56.0" | I always know which version is wired up and can launch any script without a terminal |
+| US2 | repo user | hovering "Script Fixer" to expand into "Databases", "Editors & IDEs", … | I can find scripts by intent, not by remembering IDs |
+| US3 | repo user | clicking a leaf to open an elevated terminal that runs that script | I get one UAC prompt and immediately see live output |
+| US4 | repo user | to opt-out cleanly | I can remove the menu without leftover registry junk |
+| US5 | repo maintainer | to add a script and refresh the menu in one command | new scripts surface automatically |
+| US6 | repo maintainer | to bump the project version and have the menu label update | the menu always reflects the installed version |
+
+---
+
+## 6. Architecture
+
+### 6.1 File layout
+
+```text
+scripts/53-script-fixer-context-menu/
+├── config.json                # Scope toggles, title template, category map, shell config
+├── log-messages.json          # All user-facing strings (i18n / search ready)
+├── run.ps1                    # Entry point: install | uninstall | refresh | -Help
+└── helpers/
+    ├── categorize.ps1         # registry.json -> ordered [{Category, Items[]}]
+    ├── shell-detect.ps1       # Resolves pwsh.exe / powershell.exe
+    └── menu-writer.ps1        # New-CascadingParent / New-LeafEntry / Remove-MenuTree
+
+spec/53-script-fixer-context-menu/
+└── readme.md                  # ← this document
+
+.resolved/53-script-fixer-context-menu/
+└── resolved.json              # Auto-saved post-install state (audit trail)
+```
+
+### 6.2 Data flow
+
+```text
+                           +---------------------+
+        scripts/version.json -->| Get-ProjectVersion  |--+
+                           +---------------------+  |
+                                                    v
+   scripts/registry.json ---> Get-ScriptCategorization --> Ordered category list
+                                                    |
+   config.shell + helpers/shell-detect.ps1 ---> Resolve-ShellExe --> shellExe path
+                                                    |
+                                                    v
+                           +---------------------+
+                           | menu-writer.ps1     |
+                           | per scope:          |
+                           |   Remove-MenuTree   | (idempotent wipe)
+                           |   New-CascadingParent (top)
+                           |   New-CascadingParent (each category)
+                           |   New-LeafEntry      (each script)
+                           |   Test-MenuKeyExists (verify)
+                           +---------------------+
+                                                    |
+                                                    v
+                           Save-ResolvedData (audit trail)
+```
+
+### 6.3 Component responsibilities
+
+| Component | Responsibility | NOT responsible for |
+|-----------|----------------|---------------------|
+| `run.ps1` | Argument parsing, admin assertion, top-level orchestration, summary | Registry I/O, categorization, shell resolution |
+| `helpers/categorize.ps1` | Read `registry.json`, apply `categoryMap` then heuristics, sort, flatten singletons | Reading config.json, registry I/O |
+| `helpers/shell-detect.ps1` | Locate `pwsh.exe` then fall back to `powershell.exe`, log every miss | Building command lines |
+| `helpers/menu-writer.ps1` | All registry create/delete/verify operations | Categorization, shell detection |
+
+---
+
+## 7. Registry Layout
+
+### 7.1 Scopes (D1)
+
+| Scope key   | Top-level path                                                  | Where it appears                |
+|-------------|------------------------------------------------------------------|---------------------------------|
+| `file`      | `HKCR\*\shell\ScriptFixer`                                       | Right-click on any file         |
+| `directory` | `HKCR\Directory\shell\ScriptFixer`                               | Right-click on any folder       |
+| `background`| `HKCR\Directory\Background\shell\ScriptFixer`                    | Right-click empty area in folder|
+| `desktop`   | `HKCR\DesktopBackground\Shell\ScriptFixer`                       | Right-click the Desktop         |
+
+Each scope can be toggled independently in `config.scopes.<name>.enabled`. A
+disabled scope is **also wiped** at install time (so toggling off + reinstall
+removes the menu from that scope).
+
+### 7.2 Cascading parent shape
+
+For every cascading parent (top level + each category):
+
+| Value name    | Type    | Value                               | Why |
+|---------------|---------|-------------------------------------|-----|
+| `(Default)`   | REG_SZ  | The visible label                   | Required by Explorer for legacy clients |
+| `MUIVerb`     | REG_SZ  | Same as `(Default)`                 | Required for owner-drawn cascading menus on Vista+ |
+| `SubCommands` | REG_SZ  | `""` (empty string)                 | Documented signal that "I'm a parent — read children from `\shell`" |
+| `Icon`        | REG_SZ  | `config.iconPath` (if non-empty)    | Optional polish |
+
+### 7.3 Leaf shape
+
+Each leaf lives at `<parent>\shell\<safeId>` and has:
+
+| Value name      | Type   | Value | Why |
+|-----------------|--------|-------|-----|
+| `(Default)`     | REG_SZ | `"NN -- pretty-folder-name"` | Visible label |
+| `HasLUAShield`  | REG_SZ | `""`  | Renders UAC shield + triggers elevation via `runas` (D4) |
+| `Icon`          | REG_SZ | Path to `pwsh.exe` (or override) | Visual cue that this opens a terminal |
+
+And the `command` subkey:
+
+| Path            | Value | Value template |
+|-----------------|-------|----------------|
+| `<leaf>\command` | `(Default)` | See § 7.4 |
+
+### 7.4 Command line template (dual-leaf, v0.58.0+)
+
+As of **v0.58.0**, every script gets **two** leaves under the same cascading parent:
+
+1. **Default leaf** — runs through `scripts/shared/confirm-launch.ps1::Invoke-ConfirmedLaunch`, which shows a 5-second countdown (Ctrl+C cancels, any key proceeds immediately).
+2. **Bypass leaf** — same target, suffix `" (no prompt -- Shift)"`, carries the registry value `Extended=""` so Windows hides it unless the user holds **SHIFT** while right-clicking.
+
+Both templates live in `config.shell` and both ultimately call the shared helper:
+
+```text
+# config.shell.commandTemplate (default leaf)
+"{shellExe}" -NoExit -ExecutionPolicy Bypass -Command ". '{repoRoot}\scripts\shared\confirm-launch.ps1'; Invoke-ConfirmedLaunch -RepoRoot '{repoRoot}' -ScriptId '{scriptId}' -ScriptLabel '{leafLabel}' -CountdownSeconds {countdown}"
+
+# config.shell.bypassCommandTemplate (Shift-only leaf -- adds -Bypass)
+"{shellExe}" -NoExit -ExecutionPolicy Bypass -Command ". '{repoRoot}\scripts\shared\confirm-launch.ps1'; Invoke-ConfirmedLaunch -RepoRoot '{repoRoot}' -ScriptId '{scriptId}' -ScriptLabel '{leafLabel}' -Bypass"
+```
+
+Placeholders are substituted at install time:
+
+| Placeholder    | Source                                                                  |
+|----------------|--------------------------------------------------------------------------|
+| `{shellExe}`   | Output of `Resolve-ShellExe` (absolute path)                             |
+| `{repoRoot}`   | Resolved at install time from `run.ps1`'s location (parent of `scripts/`)|
+| `{scriptId}`   | The numeric ID from `registry.json` (e.g. `52`)                          |
+| `{leafLabel}`  | `"NN -- pretty-folder-name"` -- shown in the helper's "Target:" header   |
+| `{countdown}`  | `config.confirmBeforeLaunch.countdownSeconds` (default `5`)              |
+
+Rationale for `-NoExit`: keeps the terminal open after the script finishes (or after a cancel) so the user can read the output. Rationale for the dual-leaf shape: discoverability without ceremony — the safety net is the default, the power user holds Shift to skip it.
+
+#### 7.4.1 `confirmBeforeLaunch` config block
+
+```json
+"confirmBeforeLaunch": {
+  "enabled": true,
+  "countdownSeconds": 5,
+  "emitBypassLeaves": true,
+  "bypassLabelSuffix": " (no prompt -- Shift)",
+  "bypassSubkeySuffix": "-NoPrompt"
+}
+```
+
+| Key | Effect |
+|-----|--------|
+| `enabled` | Master switch. `false` -> single-leaf legacy mode (direct dispatcher call, no countdown). |
+| `countdownSeconds` | Seconds before auto-proceed in the default leaf. `<= 0` is treated as bypass. |
+| `emitBypassLeaves` | When `true`, each script gets a Shift-only twin. `false` -> only the default leaf is written. |
+| `bypassLabelSuffix` | Appended to the bypass leaf's visible label. |
+| `bypassSubkeySuffix` | Appended to the bypass leaf's registry subkey name (kept distinct so the two leaves never collide). |
+
+#### 7.4.2 Shift-to-reveal mechanism
+
+The bypass leaf is written with the registry value `Extended = ""` (REG_SZ, empty). Windows' classic context-menu code path hides any `shell\<verb>` entry carrying that value unless **SHIFT** is held during the right-click. No DLL, no shell extension -- pure registry behavior documented since Vista.
+
+#### 7.4.3 Reuse from other menus (script 54+)
+
+`Invoke-ConfirmedLaunch` (and its sibling `Invoke-ConfirmedCommand` for arbitrary, non-dispatcher commands) is the **single source of truth** for "ask first, then run" across every menu in this repo. Script 54 (VS Code menu installer) opts in via its own `confirmBeforeLaunch` block in `scripts/54-vscode-menu-installer/config.json` -- when `enabled: true`, every "Open with Code" leaf is wrapped in a pwsh call to `Invoke-ConfirmedCommand` with the configured countdown. Disabled by default (v0.59.0) to preserve direct-launch latency.
+
+---
+
+## 8. Categorization Algorithm
+
+Implemented in `helpers/categorize.ps1::Get-ScriptCategorization`.
+
+### 8.1 Inputs
+
+- `scripts/registry.json` — `{ scripts: { "01": "01-install-vscode", ... } }`
+- `config.categoryMap` — exact-match lookup (key = stripped folder name, value = category label)
+- `config.flattenSingletonCategories` — bool
+
+### 8.2 Per-script category resolution
+
+1. Strip leading `\d+-` prefix from the folder name (`52-vscode-folder-repair` → `vscode-folder-repair`).
+2. If the stripped name appears in `config.categoryMap`, use that label.
+3. Otherwise fall back to `Get-CategoryFromFolder` heuristic (regex switch by intent).
+4. Anything still unmatched falls into `"Other"`.
+
+### 8.3 Sorting & flattening
+
+1. Within each category, items are sorted by **numeric ID** ascending (lexical fallback for non-numeric IDs).
+2. Categories are sorted **alphabetically** by display label.
+3. If `flattenSingletonCategories` is `true`, every category containing exactly 1 item is removed and its item is appended to a special `_root` group placed **after** the alphabetic categories — these render as top-level leaves directly under the "Script Fixer" parent.
+
+### 8.4 Subkey safety
+
+Category and leaf labels are sanitized via `ConvertTo-SafeSubkey`:
+
+- Strip `\ / : * ? " < > |`
+- Collapse whitespace
+- Truncate to `config.categorySubkeyMaxLen` (default 60)
+- Empty result → `"Item"`
+
+The **visible label** (`(Default)` value) is unchanged; only the **subkey name** is sanitized.
+
+---
+
+## 9. Shell Resolution
+
+Implemented in `helpers/shell-detect.ps1::Resolve-ShellExe`.
+
+### 9.1 Order
+
+1. `Get-Command pwsh` (PATH lookup).
+2. Each path in `config.shell.pwshSearchPaths`, with environment variables expanded:
+   - `%ProgramFiles%\PowerShell\7\pwsh.exe`
+   - `%ProgramFiles%\PowerShell\6\pwsh.exe`
+   - `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe`
+3. `config.shell.legacyPath` (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`).
+
+### 9.2 Failure behavior
+
+If all candidates miss, install **aborts** with an error listing every path it tried (CODE RED rule).
+
+---
+
+## 10. Commands
+
+Implemented in `run.ps1`.
+
+| Command                    | Behavior |
+|----------------------------|----------|
+| `.
+un.ps1`                | Defaults to `install` (idempotent) |
+| `.
+un.ps1 install`        | Wipes any prior tree per scope, then writes a fresh tree |
+| `.
+un.ps1 refresh`        | `uninstall` followed by `install` — recommended after editing `registry.json` or bumping `version.json` |
+| `.
+un.ps1 uninstall`      | `reg.exe delete /f` for every scope's top key, then purges `.installed/` and `.resolved/` records |
+| `.
+un.ps1 -Help`          | Prints commands + examples from `log-messages.json` |
+
+Refresh is preferred over manual delete-then-install because it runs both
+inside the same admin session and the same logging context.
+
+---
+
+## 11. Idempotency Contract
+
+- **Install**: per-scope wipe (`Remove-MenuTree`) → recreate. Re-running install N times yields the same final registry state as running it once.
+- **Uninstall**: per-scope `reg.exe delete /f`. Running uninstall on a system that was never installed returns success without error (logs `wipeNothingToDo` per scope).
+- **Refresh**: equivalent to `uninstall && install`, both running under the same admin session.
+
+---
+
+## 12. Versioning Contract
+
+- The top-level label is computed at install time from `scripts/version.json` via `Get-ProjectVersion`.
+- The label is **not** dynamically refreshed. Bumping `version.json` requires `.
+un.ps1 refresh`.
+- If `version.json` is missing or unparseable, the label falls back to `Script Fixer vunknown` and a warning is logged with the exact path that failed.
+- The install-time version is also written to `.resolved/53-script-fixer-context-menu/resolved.json` for audit.
+
+---
+
+## 13. Logging & CODE RED Compliance
+
+Every failure logs the **exact path** plus the **exact reason**:
+
+| Failure point        | Path logged                                  | Reason logged                                |
+|----------------------|----------------------------------------------|----------------------------------------------|
+| Registry write       | The full `Registry::HKEY_CLASSES_ROOT\…` path| Exception message                            |
+| Registry delete      | The translated `HKCR\…` path                 | `reg.exe exit <code>` or exception message   |
+| Shell detection miss | All searched paths joined by `; `            | "Could not resolve a PowerShell executable"  |
+| Missing `version.json`| Full path that was tested                    | "version.json not found"                     |
+| Missing `registry.json`| Full path that was tested                  | "registry.json not found -- aborting"        |
+| Missing admin        | Current user name                            | "This script must be run as Administrator."  |
+
+All strings live in `log-messages.json` for searchability and i18n readiness.
+
+---
+
+## 14. Configuration Reference (`config.json`)
+
+| Key | Type | Default | Purpose |
+|-----|------|---------|---------|
+| `enabled` | bool | `true` | Master switch. When `false`, `install` becomes a no-op (does NOT uninstall) |
+| `titleTemplate` | string | `"Script Fixer v{version}"` | Top-level label template; `{version}` is the only placeholder |
+| `categorySubkeyMaxLen` | int | `60` | Max length of sanitized subkey names |
+| `flattenSingletonCategories` | bool | `true` | Whether to promote single-item categories to top-level leaves |
+| `iconPath` | string | `""` | Optional icon for top-level + category parents |
+| `shell.preferred` | string | `"pwsh"` | Documentary; resolution order is hard-coded in `Resolve-ShellExe` |
+| `shell.fallback` | string | `"powershell"` | Documentary |
+| `shell.pwshSearchPaths` | string[] | (3 paths) | Searched in order after PATH lookup |
+| `shell.legacyPath` | string | (powershell.exe) | Final fallback |
+| `shell.commandTemplate` | string | (see § 7.4) | The `(Default)` value written to each `\command` key |
+| `scopes.<name>.enabled` | bool | `true` | Toggle per scope |
+| `scopes.<name>.topKey` | string | (per scope) | Registry top key — change at your own risk |
+| `categoryMap` | object | (large) | Folder-stripped-name → category label exact-match table |
+
+---
+
+## 15. Failure Modes & Mitigations
+
+| Failure | Mitigation |
+|---------|------------|
+| User runs without admin | `Assert-Admin` aborts with a clear message; nothing is written |
+| `registry.json` missing | Install aborts before any registry write (logged) |
+| `version.json` missing  | Install proceeds with label `Script Fixer vunknown` (warning) |
+| No PowerShell found     | Install aborts (no leaves can be wired) |
+| Partial install (e.g. 1 scope fails mid-write) | Final summary marks failure; user is told to run `refresh` |
+| User edits `registry.json` after install | Menu is stale; `.
+un.ps1 refresh` rebuilds it (documented in summary tip) |
+| User uninstalls VS Code / a tool | Affected leaf still appears but its inner script handles "not installed" itself; this menu does not pre-validate tool presence |
+| User runs an unrelated script that bumps `version.json` | Menu label becomes stale; `refresh` updates it |
+
+---
+
+## 16. Security Considerations
+
+- All leaves run as Administrator (D4). The menu is therefore a **privileged surface** — anyone with write access to `scripts/registry.json` or `run.ps1` can effectively achieve admin code execution from any user who clicks a leaf.
+- The repo is assumed to be trusted (cloned by the user, not world-writable).
+- No tokens, secrets, or credentials are stored in the registry — only paths and command lines.
+- Uninstall removes 100 % of the keys this script created. Nothing is left behind.
+
+---
+
+## 17. Test Plan
+
+### 17.0 Reusable Variables (copy-paste this block first)
+
+All registry checks below use these variables. Change them once to test a different script, category, or scope:
+
+```powershell
+# --- Adjustable parameters ---
+$SCRIPT_ID      = "52"                              # Change to test different script
+$CATEGORY       = "EditorsAndIdes"                # Change to test different category
+$LEAF_NAME      = "$SCRIPT_ID-vscode-folder-repair"  # Derived leaf subkey name
+$SCOPE_ROOT     = "HKCR:\*"                         # Options: HKCR:\*, HKCR:\Directory, HKCR:\Directory\Background, HKCR:\DesktopBackground
+
+# --- Derived registry paths (do not edit) ---
+$MENU_ROOT      = Join-Path $SCOPE_ROOT "shell\ScriptFixer"
+$CATEGORY_ROOT  = Join-Path $MENU_ROOT "shell\$CATEGORY"
+$DEFAULT_LEAF   = Join-Path $CATEGORY_ROOT "shell\$LEAF_NAME"
+$BYPASS_LEAF    = Join-Path $CATEGORY_ROOT "shell\$LEAF_NAME-NoPrompt"
+$REG_BASE       = $SCOPE_ROOT -replace '^HKCR:', 'HKCR'  # For reg.exe commands
+
+# --- Verification helpers ---
+function Test-LeafExists($Path) { Test-Path $Path }
+function Get-ExtendedValue($Path) { Get-ItemProperty $Path -Name "Extended" -ErrorAction SilentlyContinue }
+function Get-LeafCommand($Path) {
+    $cmdPath = Join-Path $Path "command"
+    (Get-ItemProperty $cmdPath -Name "(Default)" -ErrorAction SilentlyContinue)."(Default)"
+}
+```
+
+### 17.1 Manual Tests
+
+Manual acceptance checklist (no automated harness — registry side effects):
+
+1. **Install fresh**
+   - Run `.
+un.ps1 -I 53 install` as admin.
+   - Right-click on a file, folder, folder background, and Desktop → menu present in all 4 places.
+   - Top-level label matches `scripts/version.json`.
+2. **Categories present**
+   - "Databases" submenu lists every `install-<dbms>` script, sorted by ID.
+   - Singleton categories appear at top level (e.g. one-off scripts), not as one-item submenus.
+3. **Leaf launch (default, with countdown)** — v0.58.0+
+   - Click a leaf → UAC prompt → terminal opens → header banner appears with `Target` / `Repo` / `Command`.
+   - Countdown line "Auto-proceeding in 5s. Press Ctrl+C to cancel, any key to skip." prints.
+   - Wait through the full countdown → `run.ps1 -I <id>` runs → terminal stays open after completion.
+4. **Leaf launch (skip countdown)**
+   - Click a default leaf → press any key during the countdown → "Key pressed -- proceeding now." → script runs immediately.
+5. **Leaf launch (cancel countdown)**
+   - Click a default leaf → press Ctrl+C during the countdown → "Cancelled by user -- script NOT executed." → script does NOT run, terminal stays open with `-NoExit`.
+6. **Shift-bypass leaf is hidden by default**
+   - Right-click without holding Shift → only the default leaf for each script is visible (e.g. `52 -- vscode-folder-repair`).
+   - The `(no prompt -- Shift)` twin must NOT appear.
+   - **Registry verification (using §17.0 variables):**
+     ```powershell
+     # After defining $SCRIPT_ID, $CATEGORY, $LEAF_NAME, $SCOPE_ROOT and derived paths in §17.0
+     
+     # Confirm default leaf exists and has NO Extended value
+     Test-LeafExists $DEFAULT_LEAF                     # → $true
+     Get-ExtendedValue $DEFAULT_LEAF                   # → $null
+     
+     # Confirm bypass leaf exists (when emitBypassLeaves is true)
+     Test-LeafExists $BYPASS_LEAF                      # → $true
+     Get-ExtendedValue $BYPASS_LEAF                    # → (Default) property exists with empty value
+     ```
+   - **Quick reg.exe variant:**
+     ```powershell
+     reg.exe query "$REG_BASE\shell\ScriptFixer\shell\$CATEGORY\shell\$LEAF_NAME" /v Extended 2>$null
+     $LASTEXITCODE  # → 1 (value not found = correct for default leaf)
+     
+     reg.exe query "$REG_BASE\shell\ScriptFixer\shell\$CATEGORY\shell\$LEAF_NAME-NoPrompt" /v Extended
+     $LASTEXITCODE  # → 0 (value exists = correct for bypass leaf)
+     ```
+7. **Shift-bypass leaf is revealed with Shift**
+   - Hold **SHIFT** and right-click → both leaves now appear under the same cascading parent (e.g. `52 -- vscode-folder-repair` and `52 -- vscode-folder-repair (no prompt -- Shift)`).
+   - Click the bypass leaf → UAC prompt → terminal opens → "Bypass mode -- proceeding immediately (no prompt)." → script runs without any countdown.
+   - **PowerShell programmatic test (using §17.0 variables):**
+     ```powershell
+     # Re-run the variable block from §17.0, then:
+     Get-ChildItem -Path $CATEGORY_ROOT -Recurse |
+         Where-Object { $_.PSChildName -like "*$SCRIPT_ID*" } |
+         ForEach-Object {
+             $hasExtended = (Get-ExtendedValue $_.PSPath) -ne $null
+             [PSCustomObject]@{
+                 Leaf        = $_.PSChildName
+                 Path        = $_.PSPath -replace 'Microsoft.PowerShell.Core\\Registry::HKEY_CLASSES_ROOT\\', 'HKCR\\'
+                 HasExtended = $hasExtended  # $true for -NoPrompt, $false for default
+             }
+         }
+     # Expect: one entry with HasExtended=$false (default), one with HasExtended=$true (bypass)
+     ```
+8. **Bypass leaf registry shape (regedit walkthrough + reg.exe)**
+   - In `regedit`, navigate to any leaf's bypass twin (subkey ends in `-NoPrompt`) → confirm `Extended` value exists, type REG_SZ, value empty.
+   - Confirm the default twin does NOT have an `Extended` value.
+   - **Command-line verification (using §17.0 variables):**
+     ```powershell
+     # Check Extended value exists on bypass leaf (exit 0 = success = value exists)
+     reg.exe query "$REG_BASE\shell\ScriptFixer\shell\$CATEGORY\shell\$LEAF_NAME-NoPrompt" /v Extended
+     $LASTEXITCODE  # → 0
+     
+     # Check Extended value missing on default leaf (exit 1 = value not found = correct)
+     reg.exe query "$REG_BASE\shell\ScriptFixer\shell\$CATEGORY\shell\$LEAF_NAME" /v Extended 2>$null
+     $LASTEXITCODE  # → 1
+     ```
+   - **Strict type + value verification (Extended must be REG_SZ + empty string on bypass leaf, absent on default):**
+     ```powershell
+     # ---- Bypass leaf: Extended MUST exist as REG_SZ with empty string ----
+     $bypassRaw = reg.exe query "$REG_BASE\shell\ScriptFixer\shell\$CATEGORY\shell\$LEAF_NAME-NoPrompt" /v Extended
+     # Sample expected output line:
+     #     Extended    REG_SZ
+     # (no value column = empty string; reg.exe omits it for empty REG_SZ)
+     
+     $bypassLine = $bypassRaw | Where-Object { $_ -match '^\s*Extended\s+REG_SZ' }
+     $hasCorrectType = [bool]$bypassLine                                       # → $true (type is REG_SZ)
+     
+     # Confirm value is empty: line should have NO trailing content after "REG_SZ"
+     $isEmptyValue = $bypassLine -match '^\s*Extended\s+REG_SZ\s*$'           # → $true (empty)
+     
+     [PSCustomObject]@{
+         Leaf            = "$LEAF_NAME-NoPrompt"
+         ExtendedExists  = $hasCorrectType    # MUST be $true
+         TypeIsRegSz     = $hasCorrectType    # MUST be $true
+         ValueIsEmpty    = $isEmptyValue      # MUST be $true
+     }
+     
+     # ---- Default leaf: Extended MUST be completely absent (null) ----
+     $defaultRaw = reg.exe query "$REG_BASE\shell\ScriptFixer\shell\$CATEGORY\shell\$LEAF_NAME" /v Extended 2>&1
+     $defaultExitCode = $LASTEXITCODE
+     $isExtendedAbsent = ($defaultExitCode -eq 1) -and ($defaultRaw -match 'unable to find|ERROR')
+     
+     [PSCustomObject]@{
+         Leaf             = $LEAF_NAME
+         ExtendedAbsent   = $isExtendedAbsent  # MUST be $true (reg.exe exit 1 = value not found)
+         ExitCode         = $defaultExitCode   # MUST be 1
+     }
+     ```
+   - **Pure PowerShell variant (using `Microsoft.Win32.Registry` for strict type introspection):**
+     ```powershell
+     # Convert PS-Drive paths to .NET registry sub-key paths (strip "HKCR:\" prefix)
+     $bypassSubKey  = ($BYPASS_LEAF  -replace '^HKCR:\\', '')
+     $defaultSubKey = ($DEFAULT_LEAF -replace '^HKCR:\\', '')
+     
+     # ---- Bypass leaf: assert REG_SZ + empty string ----
+     $bypassKey = [Microsoft.Win32.Registry]::ClassesRoot.OpenSubKey($bypassSubKey)
+     $kind      = $bypassKey.GetValueKind("Extended")     # → String  (REG_SZ)
+     $value     = $bypassKey.GetValue("Extended")          # → ""     (empty string)
+     $bypassKey.Close()
+     
+     $kind  -eq [Microsoft.Win32.RegistryValueKind]::String   # → $true
+     $value -eq ""                                             # → $true
+     $value -is [string]                                       # → $true (NOT $null)
+     
+     # ---- Default leaf: assert Extended is null ----
+     $defaultKey = [Microsoft.Win32.Registry]::ClassesRoot.OpenSubKey($defaultSubKey)
+     $defaultVal = $defaultKey.GetValue("Extended", $null)    # → $null (value missing)
+     $defaultKey.Close()
+     
+     $null -eq $defaultVal                                     # → $true (correct: absent)
+     ```
+9. **Refresh after edit**
+   - Add a fake script to `registry.json` (e.g. `"99": "99-test"`).
+   - Run `.
+un.ps1 -I 53 refresh` → both default leaf and bypass leaf appear for `99`.
+   - **Verify with reg.exe:**
+     ```powershell
+     reg.exe query "HKCR\*\shell\ScriptFixer\shell" /s /f "99-test" | FindStr "99-test"
+     # Expect: two lines (default leaf + -NoPrompt leaf)
+     ```
+10. **Uninstall**
+    - Run `.
+un.ps1 -I 53 uninstall`.
+    - Right-click everywhere (with and without Shift) → menu absent in both states.
+    - `.installed/` + `.resolved/53-script-fixer-context-menu/` records removed.
+    - **Verify with reg.exe (using §17.0 variables):**
+      ```powershell
+      reg.exe query "$REG_BASE\shell\ScriptFixer" 2>$null
+      $LASTEXITCODE  # → 1 (key not found = successfully removed)
+      ```
+11. **Idempotency**
+    - Run `install` twice in a row → no errors, identical registry state, both leaves intact under each script.
+    - Run `uninstall` on a clean system → returns success, logs `wipeNothingToDo`.
+    - **Verify no duplicate -NoPrompt suffixes (using §17.0 variables):**
+      ```powershell
+      reg.exe query "$REG_BASE\shell\ScriptFixer" /s 2>$null | 
+          Select-String -Pattern "-NoPrompt-NoPrompt" | 
+          Measure-Object | 
+          Select-Object -ExpandProperty Count
+      # Expect: 0 (no double-suffixed keys from repeated installs)
+      ```
+12. **`emitBypassLeaves: false` (bypass leaf suppression)**
+    - Edit `config.confirmBeforeLaunch.emitBypassLeaves` to `false` → run `refresh` → only default leaves are written; Shift+right-click reveals nothing extra.
+    - **Exact PowerShell verification (using §17.0 variables):**
+      ```powershell
+      # After refresh with emitBypassLeaves: false
+      $allLeaves = Get-ChildItem -Path $MENU_ROOT\shell -Recurse -ErrorAction SilentlyContinue |
+          Where-Object { $_.PSChildName -match "^\d+" }
+      
+      $defaultLeaves = $allLeaves | Where-Object { $_.PSChildName -notlike "*-NoPrompt" }
+      $bypassLeaves  = $allLeaves | Where-Object { $_.PSChildName -like "*-NoPrompt" }
+      
+      $defaultLeaves.Count   # → N (one per script)
+      $bypassLeaves.Count    # → 0 (none emitted)
+      ```
+    - **Quick leaf-level check:**
+      ```powershell
+      # After suppressing bypass leaves, only the default leaf should exist
+      Test-LeafExists $DEFAULT_LEAF   # → $true
+      Test-LeafExists $BYPASS_LEAF    # → $false (bypass leaf not emitted)
+      ```
+    - **reg.exe batch check:**
+      ```powershell
+      reg.exe query "$REG_BASE\shell\ScriptFixer" /s 2>$null | FindStr "NoPrompt"
+      # Expect: FINDSTR: Line not found (no -NoPrompt keys exist)
+      ```
+    - **Revert test:** Set `emitBypassLeaves` back to `true` → run `refresh` → both leaf types reappear (idempotent flip).
+13. **`confirmBeforeLaunch.enabled: false` (legacy single-leaf mode)**
+    - Set `enabled: false` → run `refresh` → exactly one leaf per script, no countdown header, command line dispatches `run.ps1 -I <id>` directly.
+    - **Verify command template changed (using §17.0 variables):**
+      ```powershell
+      # Check the default leaf command directly
+      $cmd = Get-LeafCommand $DEFAULT_LEAF
+      $cmd
+      # Expect: "run.ps1 -I $SCRIPT_ID" directly (no confirm-launch.ps1 in path)
+      ```
+    - **reg.exe variant:**
+      ```powershell
+      reg.exe query "$REG_BASE\shell\ScriptFixer\shell\$CATEGORY\shell\$LEAF_NAME\command" /ve
+      # Expect: "run.ps1 -I $SCRIPT_ID" directly (no confirm-launch.ps1 in path)
+      ```
+14. **Failure paths**
+    - Rename `version.json` → install logs warning + uses `vunknown`.
+    - Rename `registry.json` → install aborts with exact path in error.
+    - Run as non-admin → aborts with admin message.
+    - Delete `scripts/shared/confirm-launch.ps1` after install → click a default leaf → terminal opens, dot-source line errors out with the exact missing path (CODE RED rule satisfied), terminal stays open.
+
+### 17.2 Testing Across Different Scopes (using §17.0 variables)
+
+To verify the menu appears on folders, backgrounds, or Desktop instead of files, redefine `$SCOPE_ROOT` and re-derive paths:
+
+```powershell
+# --- Test on Directory (folders) ---
+$SCOPE_ROOT = "HKCR:\Directory"
+$MENU_ROOT      = Join-Path $SCOPE_ROOT "shell\ScriptFixer"
+$CATEGORY_ROOT  = Join-Path $MENU_ROOT "shell\$CATEGORY"
+$DEFAULT_LEAF   = Join-Path $CATEGORY_ROOT "shell\$LEAF_NAME"
+$BYPASS_LEAF    = Join-Path $CATEGORY_ROOT "shell\$LEAF_NAME-NoPrompt"
+$REG_BASE       = $SCOPE_ROOT -replace '^HKCR:', 'HKCR'
+
+# Now run any test from §17.1 with the new paths
+Test-LeafExists $DEFAULT_LEAF   # → $true if installed on folders
+
+# --- Test on Directory Background (empty folder area) ---
+$SCOPE_ROOT = "HKCR:\Directory\Background"
+# Re-derive $MENU_ROOT, $CATEGORY_ROOT, $DEFAULT_LEAF, $BYPASS_LEAF, $REG_BASE as above...
+
+# --- Test on Desktop Background ---
+$SCOPE_ROOT = "HKCR:\DesktopBackground"
+# Re-derive paths...
+```
+
+**Quick one-liner to test all four scopes at once:**
+```powershell
+@("HKCR:\*", "HKCR:\Directory", "HKCR:\Directory\Background", "HKCR:\DesktopBackground") | ForEach-Object {
+    $regPath = ($_ -replace '^HKCR:', 'HKCR') + "\shell\ScriptFixer"
+    $exists = (reg.exe query $regPath 2>$null; $?)  # $true if exit code 0
+    [PSCustomObject]@{ Scope = $_; Installed = $exists }
+}
+```
+
+---
+
+## 18. Future Extensions (out of v1 scope)
+
+| # | Idea | Notes |
+|---|------|-------|
+| F1 | Custom `.ico` for top-level + per-category | Add `assets/fixer.ico`; populate `iconPath` |
+| F2 | Per-script icons | Extend `categoryMap` from `string` to `{ category, icon }` |
+| F3 | Hide disabled scripts | Read each script's `config.json.enabled` and skip when `false` |
+| F4 | Per-user installation | Mirror layout under `HKCU\Software\Classes` |
+| F5 | Modern Win 11 context menu | Build a packaged sparse-signed shell extension (much larger scope) |
+| F6 | Auto-refresh hook on version bump | Tie into a project-wide post-bump task |
+| ~~F7~~ | ~~Optional confirmation prompt before launch~~ | **Shipped in v0.58.0** -- see §7.4 / §17. |
+| F8 | Logging the launch event | Each leaf could append to `logs/menu-launches.jsonl` before invoking `run.ps1` |
+
+---
+
+## 19. Implementation Pointers
+
+| Want to change... | Edit... |
+|-------------------|---------|
+| The menu title format | `config.titleTemplate` |
+| Which scopes show the menu | `config.scopes.*.enabled` |
+| Category names / regrouping | `config.categoryMap` (or extend `Get-CategoryFromFolder`) |
+| Singleton flattening behavior | `config.flattenSingletonCategories` |
+| The shell that runs each leaf | `config.shell.pwshSearchPaths` / `legacyPath` / `commandTemplate` |
+| User-facing strings | `scripts/53-script-fixer-context-menu/log-messages.json` |
+| Add a brand icon | Drop a `.ico` somewhere, set `config.iconPath` |
+
+---
+
+## 20. Install Keywords
+
+Recognized by the dispatcher's keyword router:
+
+| Keyword               | Resolves to |
+|-----------------------|-------------|
+| `script-fixer-menu`   | script 53   |
+| `fixer-menu`          | script 53   |
+| `right-click-fixer`   | script 53   |
+
+```powershell
+.\run.ps1 install script-fixer-menu
+```
+
+---
+
+## 21. Prerequisites
+
+- Windows 10 / Windows 11
+- PowerShell **5.1+** to run the installer
+- **Administrator** privileges
+- The repo's top-level `run.ps1` dispatcher (the script bakes its absolute path into every leaf at install time)
+- Optional but recommended: `pwsh` 7+ for prettier terminal output
+
+---
+
+## 22. Definition of Done
+
+This script is "done" when **all** of the following hold:
+
+- [x] Spec exists at `spec/53-script-fixer-context-menu/readme.md` (this file)
+- [x] `scripts/53-script-fixer-context-menu/{config.json,log-messages.json,run.ps1}` present
+- [x] Three helpers present: `categorize.ps1`, `shell-detect.ps1`, `menu-writer.ps1`
+- [x] Registered in `scripts/registry.json` as ID `53`
+- [x] Project version bumped (≥ minor) on first ship
+- [x] Changelog entry added
+- [x] All 7 test-plan items pass on a fresh Windows 10/11 admin shell
+- [x] CODE RED rule satisfied: every failure path logs exact path + reason
+
+
+---
+
+<!-- spec-footer:v1 -->
+
+## Author
+
+<div align="center">
+
+### [Md. Alim Ul Karim](https://www.google.com/search?q=alim+ul+karim)
+
+**[Creator & Lead Architect](https://alimkarim.com)** | [Chief Software Engineer](https://www.google.com/search?q=alim+ul+karim), [Riseup Asia LLC](https://riseup-asia.com)
+
+</div>
+
+A system architect with **20+ years** of professional software engineering experience across enterprise, fintech, and distributed systems. His technology stack spans **.NET/C# (18+ years)**, **JavaScript (10+ years)**, **TypeScript (6+ years)**, and **Golang (4+ years)**.
+
+Recognized as a **top 1% talent at Crossover** and one of the top software architects globally. He is also the **Chief Software Engineer of [Riseup Asia LLC](https://riseup-asia.com/)** and maintains an active presence on **[Stack Overflow](https://stackoverflow.com/users/513511/md-alim-ul-karim)** (2,452+ reputation, 961K+ reached, member since 2010) and **LinkedIn** (12,500+ followers).
+
+| | |
+|---|---|
+| **Website** | [alimkarim.com](https://alimkarim.com/) · [my.alimkarim.com](https://my.alimkarim.com/) |
+| **LinkedIn** | [linkedin.com/in/alimkarim](https://linkedin.com/in/alimkarim) |
+| **Stack Overflow** | [stackoverflow.com/users/513511/md-alim-ul-karim](https://stackoverflow.com/users/513511/md-alim-ul-karim) |
+| **Google** | [Alim Ul Karim](https://www.google.com/search?q=Alim+Ul+Karim) |
+| **Role** | Chief Software Engineer, [Riseup Asia LLC](https://riseup-asia.com) |
+
+### Riseup Asia LLC — Top Software Company in Wyoming, USA
+
+[Riseup Asia LLC](https://riseup-asia.com) is a **top-leading software company headquartered in Wyoming, USA**, specializing in building **enterprise-grade frameworks**, **research-based AI models**, and **distributed systems architecture**. The company follows a **"think before doing"** engineering philosophy — every solution is researched, validated, and architected before implementation begins.
+
+**Core expertise includes:**
+
+- 🏗️ **Framework Development** — Designing and shipping production-grade frameworks used across enterprise and fintech platforms
+- 🧠 **Research-Based AI** — Inventing and deploying AI models grounded in rigorous research methodologies
+- 🔬 **Think Before Doing** — A disciplined engineering culture where architecture, planning, and validation precede every line of code
+- 🌐 **Distributed Systems** — Building scalable, resilient systems for global-scale applications
+
+| | |
+|---|---|
+| **Website** | [riseup-asia.com](https://riseup-asia.com) |
+| **Facebook** | [riseupasia.talent](https://www.facebook.com/riseupasia.talent/) |
+| **LinkedIn** | [Riseup Asia](https://www.linkedin.com/company/105304484/) |
+| **YouTube** | [@riseup-asia](https://www.youtube.com/@riseup-asia) |
+
+---
+
+## License
+
+This project is licensed under the **MIT License** — see the [LICENSE](../../LICENSE) file for the full text.
+
+```
+Copyright (c) 2026 Alim Ul Karim
+```
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
+
+---
+
+<div align="center">
+
+*Part of the Dev Tools Setup Scripts toolkit — see the [spec writing guide](../00-spec-writing-guide/readme.md) for the full readme contract.*
+
+</div>

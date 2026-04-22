@@ -1,0 +1,51 @@
+{
+  "devDir": {
+    "mode": "smart",
+    "default": "auto",
+    "override": ""
+  },
+  "whatsapp": {
+    "enabled": true,
+    "chocoPackage": "whatsapp",
+    "name": "WhatsApp",
+    "desc": "WhatsApp Desktop client (installed via Chocolatey, falls back to official installer)",
+    "skipDevDirPrompt": true,
+    "fallback": {
+      "enabled": true,
+      "url": "https://web.whatsapp.com/desktop/windows/release/x64/WhatsAppSetup.exe",
+      "fileName": "WhatsAppSetup.exe",
+      "downloadDir": "",
+      "silentArgs": "/S",
+      "timeoutSeconds": 600
+    },
+    "uninstallCleanup": {
+      "enabled": true,
+      "removeRegistryKeys": true,
+      "removeShortcuts": true,
+      "registryKeys": [
+        "HKCU:\\Software\\WhatsApp",
+        "HKCU:\\Software\\Classes\\WhatsApp",
+        "HKCU:\\Software\\Classes\\whatsapp",
+        "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\WhatsApp",
+        "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\WhatsApp",
+        "HKLM:\\SOFTWARE\\WhatsApp",
+        "HKLM:\\SOFTWARE\\Classes\\WhatsApp",
+        "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\WhatsApp"
+      ],
+      "shortcutPaths": [
+        "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\WhatsApp.lnk",
+        "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\WhatsApp",
+        "%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\WhatsApp.lnk",
+        "%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\WhatsApp",
+        "%USERPROFILE%\\Desktop\\WhatsApp.lnk",
+        "%PUBLIC%\\Desktop\\WhatsApp.lnk",
+        "%APPDATA%\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar\\WhatsApp.lnk",
+        "%APPDATA%\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\StartMenu\\WhatsApp.lnk"
+      ],
+      "appDataPaths": [
+        "%LOCALAPPDATA%\\WhatsApp"
+      ],
+      "purgeAppData": false
+    }
+  }
+}

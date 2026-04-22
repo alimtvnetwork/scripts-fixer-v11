@@ -1,0 +1,53 @@
+{
+  "scriptName": "install-whatsapp",
+  "scriptTitle": "Install WhatsApp",
+  "scriptDesc": "Install WhatsApp Desktop via Chocolatey (skips Microsoft Store entirely)",
+  "messages": {
+    "checking": "Checking for existing WhatsApp Desktop install...",
+    "alreadyInstalled": "WhatsApp Desktop already installed at: {path}",
+    "notFound": "WhatsApp Desktop not found -- will install via Chocolatey",
+    "installing": "Installing whatsapp via Chocolatey...",
+    "installSuccess": "WhatsApp Desktop installed at: {path}",
+    "installFailed": "WhatsApp installation failed: {error}",
+    "verifyFailed": "Install completed but WhatsApp.exe was not found in any expected location -- choco package may have changed install path",
+    "fallbackTriggered": "Chocolatey path failed -- falling back to official WhatsApp installer ({reason})",
+    "fallbackDisabled": "Fallback disabled in config -- aborting after Chocolatey failure",
+    "fallbackDownloading": "Downloading official installer from {url} -> {dest}",
+    "fallbackDownloadOk": "Downloaded {bytes} bytes to {dest}",
+    "fallbackDownloadFailed": "Download failed from {url}: {error}",
+    "fallbackRunning": "Running official installer silently: {path} {args}",
+    "fallbackInstallerExited": "Official installer exited with code {code} after {seconds}s",
+    "fallbackInstallerFailed": "Official installer failed: {error}",
+    "fallbackVerifyFailed": "Official installer ran but WhatsApp.exe still not found in expected locations",
+    "fallbackSuccess": "WhatsApp installed via official installer at: {path}",
+    "setupComplete": "WhatsApp setup complete",
+    "uninstalling": "Uninstalling {name}...",
+    "uninstallSuccess": "{name} uninstalled successfully.",
+    "uninstallFailed": "{name} uninstall failed -- package may need manual removal.",
+    "cleanupSkipped": "Post-uninstall cleanup disabled in config -- skipping registry + shortcut sweep",
+    "cleanupStart": "Sweeping leftover WhatsApp registry keys + shortcuts...",
+    "cleanupRegKeyRemoved": "Removed registry key: {path}",
+    "cleanupRegKeyMissing": "Registry key not present (clean): {path}",
+    "cleanupRegKeyFailed": "Could not remove registry key {path}: {error}",
+    "cleanupShortcutRemoved": "Removed shortcut/folder: {path}",
+    "cleanupShortcutMissing": "Shortcut not present (clean): {path}",
+    "cleanupShortcutFailed": "Could not remove shortcut {path}: {error}",
+    "cleanupAppDataKept": "AppData kept (purgeAppData=false): {path}",
+    "cleanupAppDataPurged": "Purged AppData folder: {path}",
+    "cleanupSummary": "Cleanup summary -- registry: {regRemoved} removed / {regMissing} clean / {regFailed} failed; shortcuts: {scRemoved} removed / {scMissing} clean / {scFailed} failed",
+    "uninstallComplete": "Uninstall complete. Package removed, tracking purged."
+  },
+  "help": {
+    "commands": {
+      "install": "Install WhatsApp Desktop via Chocolatey (default)",
+      "uninstall": "Uninstall WhatsApp Desktop, remove tracking"
+    },
+    "examples": [
+      ".\\run.ps1 install whatsapp",
+      ".\\run.ps1 install wa",
+      ".\\run.ps1 -I 49",
+      ".\\run.ps1 -I 49 -- -Help",
+      ".\\run.ps1 -I 49 uninstall"
+    ]
+  }
+}

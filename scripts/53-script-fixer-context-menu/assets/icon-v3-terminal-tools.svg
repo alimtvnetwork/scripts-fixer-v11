@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="g3bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#0ea5e9"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="48" fill="url(#g3bg)"/>
+  <!-- terminal window -->
+  <rect x="44" y="44" width="168" height="116" rx="14" fill="#0f172a" stroke="#ffffff" stroke-width="4"/>
+  <circle cx="62" cy="62" r="5" fill="#ef4444"/>
+  <circle cx="78" cy="62" r="5" fill="#fbbf24"/>
+  <circle cx="94" cy="62" r="5" fill="#22c55e"/>
+  <!-- prompt + checkmark = fixed -->
+  <path d="M64 100 L84 116 L64 132" fill="none" stroke="#22d3ee" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M98 136 L188 136" stroke="#94a3b8" stroke-width="6" stroke-linecap="round"/>
+  <!-- crossed wrench + screwdriver, larger and lifted -->
+  <g transform="translate(128 196)">
+    <g transform="rotate(-30)">
+      <rect x="-58" y="-7" width="92" height="14" rx="5" fill="#fbbf24"/>
+      <path d="M34 -16 a16 16 0 1 1 0 32 l-7 -7 l0 -18 z" fill="#fbbf24"/>
+      <circle cx="34" cy="0" r="6" fill="#0f172a"/>
+    </g>
+    <g transform="rotate(30)">
+      <rect x="-34" y="-6" width="68" height="12" rx="4" fill="#e2e8f0"/>
+      <rect x="-50" y="-9" width="18" height="18" rx="3" fill="#475569"/>
+      <rect x="32" y="-3" width="6" height="6" fill="#94a3b8"/>
+    </g>
+  </g>
+</svg>

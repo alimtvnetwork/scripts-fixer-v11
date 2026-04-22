@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="g2bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="g2sh" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+    <radialGradient id="g2glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#fde047" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#fde047" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="48" fill="url(#g2bg)"/>
+  <circle cx="128" cy="128" r="92" fill="url(#g2glow)"/>
+  <!-- shield -->
+  <path d="M128 40 L60 68 L60 134 C60 178 96 208 128 220 C160 208 196 178 196 134 L196 68 Z"
+        fill="url(#g2sh)" stroke="#e0f2fe" stroke-width="4"/>
+  <!-- spark / lightning bolt = fix -->
+  <path d="M138 80 L96 138 L124 138 L114 184 L160 120 L132 120 Z"
+        fill="#fde047" stroke="#1e293b" stroke-width="3" stroke-linejoin="round"/>
+</svg>
