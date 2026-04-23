@@ -625,10 +625,10 @@ Write-Host "BEFORE snapshot written: $before"
 
 ```powershell
 # folder-only repair
-.\scripts\52-vscode-folder-repair\run.ps1
+.\scripts\52-vscode-folder-repair\run.ps1            # default = repair
 
-# …or restore defaults
-.\scripts\52-vscode-folder-repair\rollback.ps1
+# …or restore defaults (subcommand of run.ps1)
+.\scripts\52-vscode-folder-repair\run.ps1 rollback
 ```
 
 ##### 6c — Snapshot **after** the change
