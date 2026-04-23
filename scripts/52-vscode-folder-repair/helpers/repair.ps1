@@ -186,3 +186,98 @@ function Restart-Explorer {
         return $false
     }
 }
+
+function Invoke-ShellRefresh {
+    <#
+    .SYNOPSIS
+        Minimal shell refresh -- forces Explorer to reload context menus,
+        icon cache, and shell associations WITHOUT killing explorer.exe.
+
+    .DESCRIPTION
+        Sends two well-known notifications:
+          1) SHChangeNotify(SHCNE_ASSOCCHANGED) -- tells the shell to flush
+             cached file/registry associations (the bag that drives the
+             right-click menu).
+          2) WM_SETTINGCHANGE broadcast with lParam = 'Environment' -- nudges
+             every top-level window to re-read environment + shell settings.
+
+        This is the lightest possible "post-repair" hook: no processes are
+        killed, no taskbar flicker, no open Explorer windows are closed.
+        On rare cases where the menu cache is genuinely stuck (very old
+        Windows 10 builds, or after corrupted registry edits) callers can
+        pass -FullRestart to fall back to the classic Restart-Explorer.
+
+    .PARAMETER FullRestart
+        If set, ALSO kills + relaunches explorer.exe after the lightweight
+        refresh. Equivalent to the old behaviour. Off by default.
+
+    .PARAMETER WaitMs
+        Forwarded to Restart-Explorer when -FullRestart is on.
+    #>
+    param(
+        [PSObject]$LogMsgs,
+        [switch]$FullRestart,
+        [int]$WaitMs = 800
+    )
+
+    Write-Log $LogMsgs.messages.refreshingShell -Level "info"
+
+    $hasFailed = $false
+
+    # 1) SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL)
+    try {
+        $shellApiSig = @'
+using System;
+using System.Runtime.InteropServices;
+public static class ShellNotify {
+    [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+    public static extern void SHChangeNotify(int wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern IntPtr SendMessageTimeout(
+        IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam,
+        uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+}
+'@
+        $isTypeMissing = -not ('ShellNotify' -as [type])
+        if ($isTypeMissing) {
+            Add-Type -TypeDefinition $shellApiSig -ErrorAction Stop
+        }
+
+        # SHCNE_ASSOCCHANGED = 0x08000000, SHCNF_IDLIST = 0x0000
+        [ShellNotify]::SHChangeNotify(0x08000000, 0x0000, [IntPtr]::Zero, [IntPtr]::Zero)
+        Write-Log $LogMsgs.messages.refreshAssocOk -Level "success"
+    } catch {
+        $hasFailed = $true
+        $reason = "SHChangeNotify failed -- reason: $($_.Exception.Message)"
+        Write-Log (($LogMsgs.messages.refreshFailed -replace '\{step\}', 'SHChangeNotify') -replace '\{error\}', $reason) -Level "error"
+    }
+
+    # 2) WM_SETTINGCHANGE broadcast (HWND_BROADCAST = 0xFFFF, WM_SETTINGCHANGE = 0x001A)
+    try {
+        $isTypePresent = ('ShellNotify' -as [type]) -ne $null
+        if ($isTypePresent) {
+            $result = [UIntPtr]::Zero
+            # SMTO_ABORTIFHUNG = 0x0002, 5000ms timeout
+            [void][ShellNotify]::SendMessageTimeout(
+                [IntPtr]0xFFFF, 0x001A, [UIntPtr]::Zero, "Environment",
+                0x0002, 5000, [ref]$result)
+            Write-Log $LogMsgs.messages.refreshBroadcastOk -Level "success"
+        }
+    } catch {
+        $hasFailed = $true
+        $reason = "WM_SETTINGCHANGE broadcast failed -- reason: $($_.Exception.Message)"
+        Write-Log (($LogMsgs.messages.refreshFailed -replace '\{step\}', 'WM_SETTINGCHANGE') -replace '\{error\}', $reason) -Level "error"
+    }
+
+    if ($FullRestart) {
+        Write-Log $LogMsgs.messages.refreshFullRestart -Level "info"
+        $null = Restart-Explorer -WaitMs $WaitMs -LogMsgs $LogMsgs
+    }
+
+    if (-not $hasFailed) {
+        Write-Log $LogMsgs.messages.refreshDone -Level "success"
+        return $true
+    }
+    return $false
+}

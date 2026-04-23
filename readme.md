@@ -12,7 +12,7 @@
 [![Tools Installed](https://img.shields.io/badge/Tools-46%2B-8b5cf6?logo=tools&logoColor=white)](#what-it-does)
 [![Databases](https://img.shields.io/badge/Databases-12-0ea5e9?logo=databricks&logoColor=white)](#databases-18-29)
 [![License](https://img.shields.io/badge/License-MIT-eab308)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-v0.83.0-f97316)](scripts/version.json)
+[![Version](https://img.shields.io/badge/Version-v0.84.0-f97316)](scripts/version.json)
 [![Changelog](https://img.shields.io/badge/Changelog-Latest-ec4899)](changelog.md)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-22c55e)](https://github.com/alimtvnetwork/gitmap-v6)
@@ -227,6 +227,7 @@ not direct script paths or manual registry editing.
 | `verify`     | Dry-run + trace — verify state without writing                        |
 | `restore`    | Re-import the newest `BEFORE` snapshot for the chosen edition         |
 | `rollback`   | Restore the **default installer entries** on all 3 targets            |
+| `refresh`    | Minimum-components shell refresh after a repair (no `explorer.exe` kill); add `--restart` for full fallback |
 | `help`       | Show help and examples                                                |
 
 Common flags accepted by every subcommand: `-Edition stable|insiders`,
@@ -264,6 +265,12 @@ Common flags accepted by every subcommand: `-Edition stable|insiders`,
 
 # Inverse: restore the default installer entries on all 3 targets
 .\run.ps1 vscode-folder rollback
+
+# Minimum-components shell refresh (no explorer.exe restart)
+.\run.ps1 vscode-folder refresh
+
+# Same, plus a full explorer.exe restart fallback
+.\run.ps1 vscode-folder refresh --restart
 ```
 
 > 🛟 **How restore works.** It picks the newest
