@@ -666,7 +666,9 @@ function Install-SelectedModels {
 
     # -- Pass 2: optional batch (parallel) attempt ------------------------------
     $batchSuccessKeys = New-Object System.Collections.Generic.HashSet[string]
-    $useBatch = $isParallelEnabled -and ($pendingCount -ge 2) -and ($null -ne (Get-Command aria2c.exe -ErrorAction SilentlyContinue))
+    # Preflight already verified aria2c availability + permissions when
+    # $isParallelEnabled is still true here.
+    $useBatch = $isParallelEnabled -and ($pendingCount -ge 2)
 
     if ($useBatch) {
         Write-Log "Parallel batch mode: $pendingCount file(s) via aria2c (concurrency=$batchMaxConcurrent)" -Level "info"
