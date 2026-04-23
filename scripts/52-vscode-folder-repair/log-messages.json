@@ -31,6 +31,12 @@
     "explorerStarted": "explorer.exe started.",
     "explorerSkipped": "Explorer restart skipped (restartExplorer=false).",
     "explorerFailed": "Explorer restart failed: {error}",
+    "refreshingShell": "Refreshing Windows shell (minimum components, no explorer.exe restart)...",
+    "refreshAssocOk": "Shell associations refreshed (SHChangeNotify SHCNE_ASSOCCHANGED).",
+    "refreshBroadcastOk": "Top-level windows notified (WM_SETTINGCHANGE 'Environment').",
+    "refreshFullRestart": "Falling back to full explorer.exe restart (--restart flag set)...",
+    "refreshFailed": "Shell refresh step '{step}' failed: {error}",
+    "refreshDone": "Shell refresh completed -- right-click menus should now reflect the repair.",
     "done": "Folder-only context menu repair completed successfully.",
     "completedWithWarnings": "Repair completed with warnings -- check output above.",
     "unknownEdition": "Unknown edition '{name}' in enabledEditions -- skipping",
@@ -57,6 +63,7 @@
       "verify":     "Verify final state without changing anything (dry-run + trace)",
       "restore":    "Re-import newest BEFORE snapshot for the chosen edition",
       "rollback":   "Restore DEFAULT installer entries on all 3 targets (inverse of repair)",
+      "refresh":    "Refresh Explorer/shell using the MINIMUM components (no explorer.exe kill). Add --restart for full restart fallback.",
       "help":       "Show this help"
     },
     "examples": [
@@ -70,6 +77,8 @@
       ".\\run.ps1 restore                                    # undo via newest BEFORE snapshot",
       ".\\run.ps1 restore -Edition insiders -RestoreFromFile 'D:\\snaps\\vscode-menu-insiders-BEFORE-20260422-143012.reg'",
       ".\\run.ps1 rollback                                   # restore default installer entries",
+      ".\\run.ps1 refresh                                    # minimum-components shell refresh (no explorer.exe kill)",
+      ".\\run.ps1 refresh --restart                          # minimum refresh PLUS full explorer.exe restart fallback",
       ".\\run.ps1 help"
     ]
   }
