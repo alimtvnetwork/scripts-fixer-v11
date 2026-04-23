@@ -605,22 +605,30 @@ function Install-SelectedModels {
     }
 
     # -- Pass 3: per-file finalize (verify+track for batch wins, sequential for misses) --
+    $progressIdx = 0
     foreach ($p in $pending) {
+        $progressIdx++
         $model        = $p.Model
         $outputPath   = $p.OutputPath
         $trackingName = $p.TrackingName
 
         $isBatchHit = $batchSuccessKeys.Contains($model.id)
 
+        $remaining = $pendingCount - $progressIdx
+        $modeTag   = if ($isBatchHit) { "[PARALLEL]" } elseif ($useBatch) { "[FALLBACK]" } else { "[SEQUENTIAL]" }
+        $bar       = Format-Bar -Done ($progressIdx - 1) -Total $pendingCount
+        $pctFiles  = [int][math]::Round((($progressIdx - 1) / [double]$pendingCount) * 100)
+        $pctBytes  = if ($pendingTotalGB -gt 0) { [int][math]::Round(($processedGB / $pendingTotalGB) * 100) } else { 0 }
+
         Write-Host ""
+        Write-Log ("  Progress $bar $progressIdx/$pendingCount files ($pctFiles%) | $([math]::Round($processedGB,1))/$([math]::Round($pendingTotalGB,1)) GB ($pctBytes%) | $remaining remaining | mode=$modeTag") -Level "info"
+
         if ($isBatchHit) {
-            Write-Log "  [$($model.index)] [PARALLEL] $($model.displayName) -- verifying" -Level "info"
+            Write-Log "  [$($model.index)] $modeTag $($model.displayName) -- verifying ($($model.fileSizeGB) GB)" -Level "info"
             $isDownloadOk = $true
         } else {
-            if ($useBatch) {
-                Write-Log "  [$($model.index)] [FALLBACK] Sequential retry: $($model.displayName)" -Level "warn"
-            }
-            Write-Log "  [$($model.index)] Downloading: $($model.displayName)" -Level "info"
+            $logLevel = if ($useBatch) { "warn" } else { "info" }
+            Write-Log "  [$($model.index)] $modeTag Downloading: $($model.displayName)" -Level $logLevel
             Write-Log "    $($model.parameters) | $($model.quantization) | $($model.fileSizeGB) GB | RAM: $($model.ramRequiredGB)+ GB" -Level "info"
             Write-Log "    $($model.bestFor)" -Level "info"
 
@@ -632,6 +640,7 @@ function Install-SelectedModels {
             Write-Log "  [$($model.index)] FAILED: $($model.displayName)" -Level "error"
             Write-FileError -FilePath $outputPath -Operation "download" -Reason "Download failed after retries" -Module "Install-SelectedModels"
             $failedCount++
+            $processedGB += [double]$model.fileSizeGB
             continue
         }
 
@@ -666,10 +675,14 @@ function Install-SelectedModels {
             }
             $failedCount++
         }
+
+        $processedGB += [double]$model.fileSizeGB
     }
 
     # Summary
     Write-Host ""
+    $finalBar = Format-Bar -Done $pendingCount -Total $pendingCount
+    Write-Log ("  Progress $finalBar $pendingCount/$pendingCount files (100%) | done") -Level "success"
     Write-Log ("Models summary: $downloadedCount downloaded, $skippedCount skipped, $failedCount failed (of $totalCount selected)") -Level "success"
     Write-Log "Models directory: $ModelsDir" -Level "info"
 }
