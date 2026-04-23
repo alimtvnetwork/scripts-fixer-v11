@@ -1,8 +1,9 @@
-# Suggestion 01 — Model Catalog Auto-Update
+# Suggestion 01 - Model Catalog Auto-Update
 
-**Status:** Spec ready, implementation pending
+**Status:** Implemented in v0.76.0
 **Target file:** `scripts/43-install-llama-cpp/models-catalog.json`
-**New helper:** `scripts/43-install-llama-cpp/helpers/catalog-update.ps1`
+**Helper:** `scripts/43-install-llama-cpp/helpers/catalog-update.ps1`
+**Wired in:** `scripts/43-install-llama-cpp/run.ps1` via `-CheckUpdates` switch
 
 ## Goal
 
