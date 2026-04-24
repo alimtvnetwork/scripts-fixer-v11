@@ -46,7 +46,9 @@
       "executables": "Download and extract executables only",
       "models": "Interactive model picker -- choose which GGUF/GGML models to download",
       "uninstall": "Remove all binaries, clean PATH, purge tracking",
-      "check-updates": "Scan Hugging Face for new GGUF releases of catalog families and write proposal JSON (no merge unless --Apply)"
+      "check-updates": "Scan Hugging Face for new GGUF releases of catalog families and write proposal JSON (no merge unless --Apply)",
+      "regen-list": "Regenerate models-list.md from models-catalog.json (grouped by family, size, hardware)",
+      "fill-sha256": "Populate missing SHA256 checksums in models-catalog.json by querying Hugging Face HEAD requests"
     },
     "examples": [
       ".\\run.ps1",
@@ -56,7 +58,10 @@
       ".\\run.ps1 uninstall",
       ".\\run.ps1 -CheckUpdates",
       ".\\run.ps1 -CheckUpdates -Family Qwen",
-      ".\\run.ps1 -CheckUpdates -Apply"
+      ".\\run.ps1 -CheckUpdates -Apply",
+      ".\\run.ps1 regen-list",
+      ".\\run.ps1 fill-sha256",
+      ".\\run.ps1 fill-sha256 mimo-v2-flash,deepseek-v3-2"
     ]
   }
 }
