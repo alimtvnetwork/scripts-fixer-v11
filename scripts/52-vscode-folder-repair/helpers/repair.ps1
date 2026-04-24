@@ -373,3 +373,130 @@ public static class ShellNotify {
     }
     return $false
 }
+
+function Test-VsCodeHandlersRegistered {
+    <#
+    .SYNOPSIS
+        Verifies that VS Code context menu handlers are registered in the
+        Windows registry and prints PASS/FAIL per target. Read-only.
+
+    .DESCRIPTION
+        For each enabled edition, checks the three classic targets
+        (file, directory, background). For each target listed in the
+        repair's ensureOnTargets the handler MUST be present and have a
+        non-empty (default) value on the \command subkey. Targets listed
+        in removeFromTargets MUST be absent. Anything else is reported
+        as SKIP.
+
+        Returns $true only when every in-scope target is in the expected
+        state across every enabled edition.
+    #>
+    param(
+        [PSObject]$Config,
+        [PSObject]$LogMsgs,
+        [string]$EditionFilter = ''
+    )
+
+    Write-Log $LogMsgs.messages.verifyHandlersStart -Level "info"
+    Write-Host ""
+    Write-Host $LogMsgs.messages.verifyHandlersHeader -ForegroundColor Cyan
+
+    $editions = @($Config.enabledEditions)
+    $hasFilter = -not [string]::IsNullOrWhiteSpace($EditionFilter)
+    if ($hasFilter) { $editions = @($EditionFilter) }
+
+    $ensureTargets = @($Config.ensureOnTargets)
+    $removeTargets = @($Config.removeFromTargets)
+    $allTargets    = @('file','directory','background')
+
+    $totalChecked = 0
+    $totalFailed  = 0
+
+    foreach ($editionName in $editions) {
+        $editionCfg = $Config.editions.$editionName
+        if ($null -eq $editionCfg) {
+            Write-Host ("  Edition: $editionName -- UNKNOWN, skipping") -ForegroundColor DarkYellow
+            continue
+        }
+
+        $line = ($LogMsgs.messages.verifyHandlersEdition -replace '\{edition\}', $editionName) -replace '\{label\}', $editionCfg.contextMenuLabel
+        Write-Host $line -ForegroundColor White
+
+        foreach ($target in $allTargets) {
+            $regPath = $editionCfg.registryPaths.$target
+            $hasPath = -not [string]::IsNullOrWhiteSpace($regPath)
+            if (-not $hasPath) {
+                $msg = ($LogMsgs.messages.verifyHandlersTargetSkip -replace '\{target\}', $target) -replace '\{path\}', '(no registry path configured)'
+                Write-Host $msg -ForegroundColor DarkGray
+                continue
+            }
+
+            $isExpectedPresent = $ensureTargets -contains $target
+            $isExpectedAbsent  = $removeTargets -contains $target
+            $isInScope         = $isExpectedPresent -or $isExpectedAbsent
+            if (-not $isInScope) {
+                $msg = ($LogMsgs.messages.verifyHandlersTargetSkip -replace '\{target\}', $target) -replace '\{path\}', $regPath
+                Write-Host $msg -ForegroundColor DarkGray
+                continue
+            }
+
+            $totalChecked++
+
+            # Probe key + \command default value via reg.exe (works under HKCR).
+            $keyOut = reg.exe query $regPath 2>&1
+            $isKeyPresent = ($LASTEXITCODE -eq 0)
+
+            $cmdPath = "$regPath\command"
+            $cmdOut  = reg.exe query $cmdPath /ve 2>&1
+            $isCmdPresent = ($LASTEXITCODE -eq 0)
+
+            $cmdValue = ''
+            if ($isCmdPresent) {
+                # Parse "(Default)    REG_SZ    "<exe>" "%V""
+                foreach ($ln in $cmdOut) {
+                    if ($ln -match '\s*\(Default\)\s+REG_\w+\s+(.+)$') {
+                        $cmdValue = $Matches[1].Trim()
+                        break
+                    }
+                }
+            }
+
+            if ($isExpectedPresent) {
+                $isPass = $isKeyPresent -and $isCmdPresent -and -not [string]::IsNullOrWhiteSpace($cmdValue)
+                if ($isPass) {
+                    $msg = (($LogMsgs.messages.verifyHandlersTargetPass -replace '\{target\}', $target) -replace '\{command\}', $cmdValue)
+                    Write-Host $msg -ForegroundColor Green
+                } else {
+                    $reason = if (-not $isKeyPresent) { 'expected PRESENT but key is missing' }
+                              elseif (-not $isCmdPresent) { 'key present but \command subkey missing' }
+                              else { 'command subkey present but (Default) value is empty' }
+                    $msg = (($LogMsgs.messages.verifyHandlersTargetFail -replace '\{target\}', $target) -replace '\{reason\}', $reason) -replace '\{path\}', $regPath
+                    Write-Host $msg -ForegroundColor Red
+                    $totalFailed++
+                }
+            } else {
+                # Expected absent
+                if (-not $isKeyPresent) {
+                    $msg = (($LogMsgs.messages.verifyHandlersTargetPass -replace '\{target\}', $target) -replace '\{command\}', '(absent as expected)')
+                    Write-Host $msg -ForegroundColor Green
+                } else {
+                    $reason = 'expected ABSENT but key is still PRESENT'
+                    $msg = (($LogMsgs.messages.verifyHandlersTargetFail -replace '\{target\}', $target) -replace '\{reason\}', $reason) -replace '\{path\}', $regPath
+                    Write-Host $msg -ForegroundColor Red
+                    $totalFailed++
+                }
+            }
+        }
+    }
+
+    Write-Host ""
+    if ($totalFailed -eq 0 -and $totalChecked -gt 0) {
+        Write-Host $LogMsgs.messages.verifyHandlersOverallPass -ForegroundColor Green
+        Write-Log  $LogMsgs.messages.verifyHandlersOverallPass -Level "success"
+        return $true
+    }
+    $line = ($LogMsgs.messages.verifyHandlersOverallFail -replace '\{failed\}', $totalFailed) -replace '\{total\}', $totalChecked
+    Write-Host $line -ForegroundColor Red
+    Write-Log  $line -Level "error"
+    return $false
+}
