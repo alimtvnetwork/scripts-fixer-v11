@@ -83,8 +83,10 @@ Audit mode, health checks, settings sync, context-menu repair, and CI-tested ver
 
 ### 🎯 Apply a full developer profile
 
-Bundles VS Code, Git, Node, pnpm, Python, Notepad++ with synced settings,
-and ten more tools — installed in dependency order, idempotent, resumable.
+Bundles VS Code, Git, Notepad++/ConEmu/OBS with synced settings, GitHub
+Desktop, WhatsApp, and a dozen more workstation tools — installed in
+dependency order, idempotent, resumable. Add `dev` or `dev-advance` for
+the language runtimes.
 
 <p align="center">
   <img src="assets/demos/run-profile-advance.svg" alt="Demo: applying the 'advance' developer profile in one command" width="100%"/>
