@@ -42,6 +42,33 @@ Implementation folder for **Script 54 — Vscode Menu Installer**. The full desi
 | `helpers/` | Internal PowerShell helper modules. |
 | `.audit/` | Auto-created at runtime. One JSONL file per install/uninstall run, recording every registry key added or removed (timestamped, gitignored). |
 
+## Rollback & pre-install snapshot
+
+Every `install` run automatically exports the current state of every
+target registry key BEFORE writing anything new:
+
+```
+.audit/snapshots/snapshot-20260424-101523.reg
+```
+
+The snapshot is a single `reg.exe export`-format file containing one
+block per target key (file / folder / background) per enabled edition.
+Keys that did not exist at snapshot time are recorded as ASCII comment
+placeholders so you can see exactly what was new vs. overwritten.
+
+Two cleanup paths:
+
+| Verb | What it does |
+|---|---|
+| `.\\run.ps1 -I 54 uninstall` | Surgical delete. Removes ONLY the keys listed in `config.json::registryPaths`. Never touches siblings. |
+| `.\\run.ps1 -I 54 rollback` | Same surgical delete, plus prints the path of the latest snapshot so you can manually `reg.exe import` it to restore any third-party "Open with Code" entries that pre-existed. |
+
+Manual full restore (brings back exactly what was there before the most recent install):
+
+```powershell
+reg.exe import .audit\snapshots\snapshot-<yyyyMMdd-HHmmss>.reg
+```
+
 ## Audit log
 
 Every install and uninstall run writes a timestamped audit file to
