@@ -1,6 +1,6 @@
 {
   "catalogVersion": "4.1.0",
-  "description": "Comprehensive GGUF/GGML model catalog for llama.cpp. 91 models including the open-weight portion of the OpenRouter LLM Leaderboard (Nov 2025). Models are downloaded to user-specified directory at runtime.",
+  "description": "Comprehensive GGUF/GGML model catalog for llama.cpp. 90 models including the open-weight portion of the OpenRouter LLM Leaderboard (Nov 2025). Models are downloaded to user-specified directory at runtime.",
   "capabilityFlags": {
     "isCoding": "Model is trained/optimized for code generation, completion, and debugging",
     "isReasoning": "Model supports chain-of-thought, step-by-step logical reasoning",
@@ -2342,37 +2342,6 @@
       "sha256": ""
     },
     {
-      "id": "phi-4-14b",
-      "displayName": "★ Microsoft Phi-4 14B",
-      "family": "Microsoft Phi-4",
-      "parameters": "14B",
-      "quantization": "Q4_K_M",
-      "fileSizeGB": 8.4,
-      "fileName": "phi-4-Q4_K_M.gguf",
-      "ramRequiredGB": 12,
-      "ramRecommendedGB": 16,
-      "isCoding": true,
-      "isReasoning": true,
-      "isVoice": false,
-      "isWriting": true,
-      "isMultilingual": true,
-      "isChat": true,
-      "rating": {
-        "coding": 8,
-        "reasoning": 9,
-        "speed": 7,
-        "overall": 9
-      },
-      "bestFor": "Microsoft's flagship small model. Near-GPT-4 reasoning at 14B. Top-tier math, coding, and science benchmarks.",
-      "notes": "14B params, 16K context. Beats Qwen 2.5 14B and Llama 3.3 on many benchmarks. Trained on synthetic + filtered data.",
-      "source": "Microsoft",
-      "license": "MIT",
-      "downloadUrl": "https://huggingface.co/bartowski/phi-4-GGUF/resolve/main/phi-4-Q4_K_M.gguf",
-      "huggingfacePage": "https://huggingface.co/bartowski/phi-4-GGUF",
-      "index": 76,
-      "sha256": ""
-    },
-    {
       "id": "granite-3.1-2b-instruct",
       "displayName": "IBM Granite 3.1 2B Instruct",
       "family": "IBM Granite 3.1",
@@ -2400,7 +2369,7 @@
       "license": "Apache 2.0",
       "downloadUrl": "https://huggingface.co/bartowski/granite-3.1-2b-instruct-GGUF/resolve/main/granite-3.1-2b-instruct-Q4_K_M.gguf",
       "huggingfacePage": "https://huggingface.co/bartowski/granite-3.1-2b-instruct-GGUF",
-      "index": 77,
+      "index": 76,
       "sha256": ""
     },
     {
@@ -2431,7 +2400,7 @@
       "license": "Apache 2.0",
       "downloadUrl": "https://huggingface.co/bartowski/granite-3.1-8b-instruct-GGUF/resolve/main/granite-3.1-8b-instruct-Q4_K_M.gguf",
       "huggingfacePage": "https://huggingface.co/bartowski/granite-3.1-8b-instruct-GGUF",
-      "index": 78,
+      "index": 77,
       "sha256": ""
     },
     {
@@ -2462,7 +2431,7 @@
       "license": "Apache 2.0",
       "downloadUrl": "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
       "huggingfacePage": "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF",
-      "index": 79,
+      "index": 78,
       "sha256": ""
     },
     {
@@ -2493,7 +2462,7 @@
       "license": "Llama 3.1 Community",
       "downloadUrl": "https://huggingface.co/bartowski/functionary-small-v3.1-GGUF/resolve/main/functionary-small-v3.1-Q4_K_M.gguf",
       "huggingfacePage": "https://huggingface.co/bartowski/functionary-small-v3.1-GGUF",
-      "index": 80,
+      "index": 79,
       "sha256": ""
     },
     {
@@ -2524,7 +2493,7 @@
       "license": "Gemma License",
       "downloadUrl": "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q4_K_M.gguf",
       "huggingfacePage": "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF",
-      "index": 81,
+      "index": 80,
       "sha256": ""
     },
     {
@@ -2556,7 +2525,7 @@
       "downloadUrl": "https://huggingface.co/unsloth/MiMo-V2-Flash-GGUF/resolve/main/MiMo-V2-Flash-Q4_K_M.gguf",
       "huggingfacePage": "https://huggingface.co/unsloth/MiMo-V2-Flash-GGUF",
       "leaderboardRank": 1,
-      "index": 82,
+      "index": 81,
       "sha256": "",
       "leaderboardSource": "OpenRouter LLM Leaderboard (Nov 2025)"
     },
@@ -2589,7 +2558,7 @@
       "downloadUrl": "https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-Q4_K_M.gguf",
       "huggingfacePage": "https://huggingface.co/unsloth/Qwen3.6-27B-GGUF",
       "leaderboardRank": 2,
-      "index": 83,
+      "index": 82,
       "sha256": "",
       "leaderboardSource": "OpenRouter LLM Leaderboard (Nov 2025)"
     },
@@ -2622,7 +2591,7 @@
       "downloadUrl": "https://huggingface.co/unsloth/DeepSeek-V3.2-GGUF/resolve/main/DeepSeek-V3.2-Q4_K_M-00001-of-00009.gguf",
       "huggingfacePage": "https://huggingface.co/unsloth/DeepSeek-V3.2-GGUF",
       "leaderboardRank": 3,
-      "index": 84,
+      "index": 83,
       "sha256": "",
       "leaderboardSource": "OpenRouter LLM Leaderboard (Nov 2025)"
     },
@@ -2655,7 +2624,7 @@
       "downloadUrl": "https://huggingface.co/unsloth/MiniMax-M2-GGUF/resolve/main/MiniMax-M2-Q4_K_M-00001-of-00003.gguf",
       "huggingfacePage": "https://huggingface.co/unsloth/MiniMax-M2-GGUF",
       "leaderboardRank": 5,
-      "index": 85,
+      "index": 84,
       "sha256": "",
       "leaderboardSource": "OpenRouter LLM Leaderboard (Nov 2025)"
     },
@@ -2688,7 +2657,7 @@
       "downloadUrl": "https://huggingface.co/unsloth/MiniMax-M2.7-GGUF/resolve/main/MiniMax-M2.7-Q4_K_M-00001-of-00003.gguf",
       "huggingfacePage": "https://huggingface.co/unsloth/MiniMax-M2.7-GGUF",
       "leaderboardRank": 8,
-      "index": 86,
+      "index": 85,
       "sha256": "",
       "leaderboardSource": "OpenRouter LLM Leaderboard (Nov 2025)"
     },
@@ -2721,7 +2690,7 @@
       "downloadUrl": "https://huggingface.co/stepfun-ai/Step-3.5-Flash-GGUF-Q8_0/resolve/main/Step-3.5-Flash-Q8_0.gguf",
       "huggingfacePage": "https://huggingface.co/stepfun-ai/Step-3.5-Flash-GGUF-Q8_0",
       "leaderboardRank": 9,
-      "index": 87,
+      "index": 86,
       "sha256": "",
       "leaderboardSource": "OpenRouter LLM Leaderboard (Nov 2025)"
     },
@@ -2754,7 +2723,7 @@
       "downloadUrl": "https://huggingface.co/unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF/resolve/main/NVIDIA-Nemotron-3-Super-120B-A12B-Q4_K_M-00001-of-00002.gguf",
       "huggingfacePage": "https://huggingface.co/unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF",
       "leaderboardRank": 12,
-      "index": 88,
+      "index": 87,
       "sha256": "",
       "leaderboardSource": "OpenRouter LLM Leaderboard (Nov 2025)"
     },
@@ -2787,7 +2756,7 @@
       "downloadUrl": "https://huggingface.co/unsloth/GLM-5.1-GGUF/resolve/main/GLM-5.1-Q4_K_M-00001-of-00005.gguf",
       "huggingfacePage": "https://huggingface.co/unsloth/GLM-5.1-GGUF",
       "leaderboardRank": 14,
-      "index": 89,
+      "index": 88,
       "sha256": "",
       "leaderboardSource": "OpenRouter LLM Leaderboard (Nov 2025)"
     },
@@ -2820,7 +2789,7 @@
       "downloadUrl": "https://huggingface.co/unsloth/Kimi-K2.6-GGUF/resolve/main/Kimi-K2.6-UD-Q2_K_XL-00001-of-00008.gguf",
       "huggingfacePage": "https://huggingface.co/unsloth/Kimi-K2.6-GGUF",
       "leaderboardRank": 15,
-      "index": 90,
+      "index": 89,
       "sha256": "",
       "leaderboardSource": "OpenRouter LLM Leaderboard (Nov 2025)"
     },
@@ -2853,7 +2822,7 @@
       "downloadUrl": "https://huggingface.co/bartowski/openai_gpt-oss-120b-GGUF/resolve/main/openai_gpt-oss-120b-MXFP4_MOE/openai_gpt-oss-120b-MXFP4_MOE-00001-of-00002.gguf",
       "huggingfacePage": "https://huggingface.co/bartowski/openai_gpt-oss-120b-GGUF",
       "leaderboardRank": 17,
-      "index": 91,
+      "index": 90,
       "sha256": "",
       "leaderboardSource": "OpenRouter LLM Leaderboard (Nov 2025)"
     }

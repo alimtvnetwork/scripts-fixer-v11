@@ -13,7 +13,7 @@
 [![Databases](https://img.shields.io/badge/Databases-12-0ea5e9?logo=databricks&logoColor=white)](#databases-18-29)
 [![License](https://img.shields.io/badge/License-MIT-eab308)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-v0.95.0-f97316)](scripts/version.json)
-[![AI Models](https://img.shields.io/badge/AI%20Models-91-ef4444?logo=huggingface&logoColor=white)](scripts/43-install-llama-cpp/models-list.md)
+[![AI Models](https://img.shields.io/badge/AI%20Models-90-ef4444?logo=huggingface&logoColor=white)](scripts/43-install-llama-cpp/models-list.md)
 [![Changelog](https://img.shields.io/badge/Changelog-Latest-ec4899)](changelog.md)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-22c55e)](https://github.com/alimtvnetwork/gitmap-v6)

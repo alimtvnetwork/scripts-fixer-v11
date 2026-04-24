@@ -1,5 +1,5 @@
 # Local AI Models Catalog
-> 91 downloadable GGUF models for `llama.cpp` (script `43-install-llama-cpp`).
+> 90 downloadable GGUF models for `llama.cpp` (script `43-install-llama-cpp`).
 > Catalog version **4.1.0** — auto-grouped by family, size, capability.
 > Models marked **★** are curated picks. Models tagged **[Leaderboard #N]** are the open-weight portion of the OpenRouter LLM Leaderboard (Nov 2025).
 
@@ -216,12 +216,11 @@ Source: OpenRouter LLM Leaderboard, Nov 2025. Closed-source API models (Claude, 
 | `phi-4-14b` | ★ Microsoft Phi-4 14B | 14B | 9.1 | Large | Slow | 12 | Coding, Reasoning, Writing, Multilingual, Chat | 8/10 | 8/10 | Q4_K_M | MIT | [HF](https://huggingface.co/bartowski/phi-4-GGUF) |
 | `phi-4-reasoning-plus` | ★ Phi-4 Reasoning Plus | 14B | 9.1 | Large | Slow | 12 | Coding, Reasoning, Multilingual, Chat | 8/10 | 9/10 | Q4_K_M | MIT | [HF](https://huggingface.co/bartowski/microsoft_Phi-4-reasoning-plus-GGUF) |
 
-### Microsoft Phi-4 (2)
+### Microsoft Phi-4 (1)
 
 | ID | Display | Params | Size (GB) | Tier | Speed | RAM (GB) | Capabilities | Coding | Reasoning | Quant | License | Download |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `phi-4-mini-3.8b` | ★ Microsoft Phi-4 Mini 3.8B | 3.8B | 2.3 | Small | Fast | 4 | Coding, Reasoning, Writing, Multilingual, Chat | 7/10 | 8/10 | Q4_K_M | MIT | [HF](https://huggingface.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF) |
-| `phi-4-14b` | ★ Microsoft Phi-4 14B | 14B | 8.4 | Large | Slow | 12 | Coding, Reasoning, Writing, Multilingual, Chat | 8/10 | 9/10 | Q4_K_M | MIT | [HF](https://huggingface.co/bartowski/phi-4-GGUF) |
 
 ### MiniMax (2)
 
@@ -328,4 +327,4 @@ After filtering, surviving models are re-indexed `1..N` so you can multi-select 
 - [`scripts/42-install-ollama/readme.md`](../42-install-ollama/readme.md) — Ollama daemon backend
 
 ---
-*Generated from `models-catalog.json` v4.1.0 — 91 models, 33 families*
+*Generated from `models-catalog.json` v4.1.0 — 90 models, 33 families*
