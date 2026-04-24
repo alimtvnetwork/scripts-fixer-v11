@@ -723,6 +723,7 @@ def main() -> None:  # noqa: F811 -- intentional override
     demo_os_clean_detailed()
     demo_install_comma()
     demo_classic_context()
+    demo_models_picker()
 
 
 if __name__ == "__main__":
