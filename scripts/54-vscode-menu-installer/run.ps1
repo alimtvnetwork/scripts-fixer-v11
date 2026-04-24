@@ -47,6 +47,30 @@ switch ($Command.ToLower()) {
     "uninstall" {
         & (Join-Path $scriptDir "uninstall.ps1") -Edition $Edition
     }
+    "rollback" {
+        # Per spec: rollback is a surgical "remove what we added" -- it does
+        # NOT auto-import the pre-install snapshot. We point the user at the
+        # snapshot file so they can manually restore prior third-party
+        # entries with `reg.exe import` if they want to.
+        $sharedDir = Join-Path (Split-Path -Parent $scriptDir) "shared"
+        . (Join-Path $sharedDir "logging.ps1")
+        . (Join-Path $scriptDir "helpers\registry-snapshot.ps1")
+        $snap = Get-LatestSnapshotPath -ScriptDir $scriptDir
+        $hasSnap = -not [string]::IsNullOrWhiteSpace($snap)
+        if ($hasSnap) {
+            Write-Host ""
+            Write-Host "  Pre-install snapshot available: $snap" -ForegroundColor Cyan
+            Write-Host "  To restore the EXACT pre-install registry state (incl. any third-party entries):" -ForegroundColor Gray
+            Write-Host "      reg.exe import `"$snap`"" -ForegroundColor DarkGray
+            Write-Host ""
+        } else {
+            Write-Host ""
+            Write-Host "  No pre-install snapshot found under .audit\snapshots\." -ForegroundColor Yellow
+            Write-Host "  Proceeding with surgical removal of keys we created." -ForegroundColor Gray
+            Write-Host ""
+        }
+        & (Join-Path $scriptDir "uninstall.ps1") -Edition $Edition
+    }
     "check" {
         # Quick read-only registry verification for folder + background +
         # file context-menu entries. Independent of the heavier 'verify'
