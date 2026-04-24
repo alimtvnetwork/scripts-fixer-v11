@@ -105,8 +105,10 @@
         ".\\run.ps1 refresh --both                             # explicit: both notifications (same as default)",
       ".\\run.ps1 refresh --restart                          # minimum refresh PLUS full explorer.exe restart fallback",
       ".\\run.ps1 refresh --verify                           # refresh, then check handlers and print PASS/FAIL",
+      ".\\run.ps1 refresh --verify -Edition stable          # refresh + verify, scoped, JSON report saved",
       ".\\run.ps1 verify-handlers                            # standalone PASS/FAIL check (no writes, no refresh)",
       ".\\run.ps1 verify-handlers -Edition stable            # check only the stable edition",
+      ".\\run.ps1 verify-handlers --report                   # ALSO save JSON troubleshooting report",
       ".\\run.ps1 help"
     ],
     "refresh": {
