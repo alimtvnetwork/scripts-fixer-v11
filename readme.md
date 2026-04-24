@@ -717,7 +717,7 @@ A modular collection of **46 PowerShell scripts** that automate everything from 
 
 | ID | Script | What It Does | Admin |
 |----|--------|--------------|-------|
-| 32 | **DBeaver Community** | Universal database visualization and management tool | Yes |
+| 32 | **[DBeaver Community](scripts/32-install-dbeaver/)** | Universal database visualization and management tool | Yes |
 | 33 | **Notepad++ (NPP)** | Install NPP, NPP Settings, or NPP + Settings | Yes |
 | 34 | **Simple Sticky Notes** | Install Simple Sticky Notes via Chocolatey | Yes |
 | 35 | **GitMap** | Git repository navigator CLI tool | Yes |
