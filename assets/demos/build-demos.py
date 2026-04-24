@@ -510,6 +510,83 @@ def demo_os_clean() -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # noqa: re-defined below by injected demos -- keep in sync
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Demo: multi-tool comma install (showcases "vscode,git,nodejs,pnpm")
+# Bigger typewriter on the prompt; shows that names compose.
+# ---------------------------------------------------------------------------
+
+def demo_install_comma() -> None:
+    cmd = ".\\run.ps1 install vscode,git,nodejs,pnpm,python,npp"
+    lines: List[Line] = [
+        Line(prompt_segments(cmd), delay=0.4, typed=True),
+
+        Line([("", TEXT_FG)], delay=4.6),
+        Line([("==> Resolving 6 keywords -> 6 scripts", ACCENT_HEADER)], delay=4.7),
+        Line([("    vscode -> #01    git -> #07    nodejs -> #03", DIM_FG)], delay=4.9),
+        Line([("    pnpm   -> #04    python -> #05  npp    -> #33", DIM_FG)], delay=5.05),
+        Line([("", TEXT_FG)], delay=5.2),
+
+        Line([("[1/6] ", ACCENT_INFO), ("vscode               ", TEXT_FG), ("OK", ACCENT_OK)], delay=5.4),
+        Line([("[2/6] ", ACCENT_INFO), ("git + lfs + gh       ", TEXT_FG), ("OK", ACCENT_OK)], delay=5.7),
+        Line([("[3/6] ", ACCENT_INFO), ("nodejs (E:\\dev-tool) ", TEXT_FG), ("OK", ACCENT_OK)], delay=6.0),
+        Line([("[4/6] ", ACCENT_INFO), ("pnpm   (E:\\dev-tool) ", TEXT_FG), ("OK", ACCENT_OK)], delay=6.3),
+        Line([("[5/6] ", ACCENT_INFO), ("python (E:\\dev-tool) ", TEXT_FG), ("OK", ACCENT_OK)], delay=6.6),
+        Line([("[6/6] ", ACCENT_INFO), ("notepad++ + settings ", TEXT_FG), ("OK", ACCENT_OK)], delay=6.9),
+
+        Line([("", TEXT_FG)], delay=7.3),
+        Line([("6 tools installed in ", DIM_FG), ("3m 02s", ACCENT_WARN), ("  -- one command, comma-separated.", DIM_FG)], delay=7.5),
+
+        Line(prompt_segments(""), delay=8.4, typed=False),
+    ]
+    build_svg(
+        title="run install vscode,git,nodejs,pnpm,python,npp  -  one command, many tools",
+        lines=lines,
+        loop_seconds=11.5,
+        out_path=OUT_DIR / "run-install-comma.svg",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Demo: Win11 classic right-click restore (part of profile minimal)
+# ---------------------------------------------------------------------------
+
+def demo_classic_context() -> None:
+    lines: List[Line] = [
+        Line(prompt_segments(".\\run.ps1 profile minimal"), delay=0.4, typed=True),
+
+        Line([("", TEXT_FG)], delay=3.4),
+        Line([("==> Profile: minimal  (5 steps -- includes Win11 fix)", ACCENT_HEADER)], delay=3.5),
+        Line([("    bootstrap + classic right-click menu", DIM_FG)], delay=3.65),
+        Line([("", TEXT_FG)], delay=3.8),
+
+        Line([("[1/5] ", ACCENT_INFO), ("chocolatey                       ", TEXT_FG), ("OK", ACCENT_OK)], delay=4.0),
+        Line([("[2/5] ", ACCENT_INFO), ("git + lfs                        ", TEXT_FG), ("OK", ACCENT_OK)], delay=4.35),
+        Line([("[3/5] ", ACCENT_INFO), ("7-zip                            ", TEXT_FG), ("OK", ACCENT_OK)], delay=4.7),
+        Line([("[4/5] ", ACCENT_INFO), ("google chrome                    ", TEXT_FG), ("OK", ACCENT_OK)], delay=5.05),
+        Line([("[5/5] ", ACCENT_INFO), ("win11 classic right-click menu   ", TEXT_FG), ("OK", ACCENT_OK)], delay=5.4),
+        Line([("       ", DIM_FG), ("HKCU CLSID {86ca1aa0-...} written -- restart explorer", DIM_FG)], delay=5.6),
+
+        Line([("", TEXT_FG)], delay=5.95),
+        Line([("Bootstrap done in ", DIM_FG), ("1m 58s", ACCENT_WARN), ("  -- right-click menu now shows ALL apps.", DIM_FG)], delay=6.15),
+
+        Line(prompt_segments(""), delay=7.0, typed=False),
+    ]
+    build_svg(
+        title="run profile minimal  -  bootstrap + Win11 classic right-click menu",
+        lines=lines,
+        loop_seconds=10.0,
+        out_path=OUT_DIR / "run-profile-minimal-classic.svg",
+    )
+
+
+# Re-bind `main` so the new demos are emitted (we kept the original above as
+# a stub to satisfy apply_patch context windows).
+
+def main() -> None:  # noqa: F811 -- intentional override
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     demo_profile()
     demo_profile_minimal()
@@ -518,6 +595,8 @@ def main() -> None:
     demo_postgres()
     demo_os_clean()
     demo_os_clean_detailed()
+    demo_install_comma()
+    demo_classic_context()
 
 
 if __name__ == "__main__":

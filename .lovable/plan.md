@@ -1,11 +1,19 @@
 # Project Plan -- Dev Tools Setup
 
-## Current Version: v0.39.4
-## Last Updated: 2026-04-19
+## Current Version: v0.92.0
+## Last Updated: 2026-04-24
 
 ---
 
 ## 🔄 In Progress
+
+### README profile UX overhaul (v0.92.0)
+- [x] Per-profile H3 sections in root `readme.md` with: what installs, install-location matrix (C:\ vs E:\dev-tool), copy-paste one-liner, animated demo
+- [x] **XMind** dedicated section -- explains `choco install xmind` lands in `C:\Program Files (x86)\XMind`, not E:
+- [x] **Multi-tool comma install** section with big animated typewriter demo (`install vscode,git,nodejs,pnpm`)
+- [x] **Win11 classic right-click menu** restore inline helper (`Restore-Win11ClassicContext`), wired into `profile minimal` (HKCU CLSID `{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32` empty default)
+- [x] Updated `spec/2025-batch/12-profiles.md` with new minimal step + per-profile install location matrix
+- [x] Saved memory file `mem://features/02-profile-install-locations` so future README/spec edits keep the C:\ vs E:\ matrix consistent
 
 ### 2025 Batch
 - [x] **Group A complete** -- scripts 47-51 (ubuntu-font, conemu+settings, whatsapp, onenote+tray+onedrive, lightshot+tweaks). v0.39.1.

@@ -12,6 +12,7 @@
       Setup-SshKey             -- detect / generate ed25519 SSH key
       Setup-GitHubDir          -- create $HOME\GitHub default folder
       Apply-DefaultGitConfig   -- merge default-gitconfig template into ~\.gitconfig
+      Restore-Win11ClassicContext -- restore the Windows 10 classic right-click menu on Win11
 #>
 
 function Install-PSReadLineLatest {
@@ -179,4 +180,57 @@ function Apply-DefaultGitConfig {
     & git config --global url."ssh://git@gitlab.com/".insteadOf "https://gitlab.com/" | Out-Null
 
     Write-Log "Applied default git config (LFS filters, safe.directory=*, gitlab url rewrite)" -Level "success"
+}
+
+function Restore-Win11ClassicContext {
+    <#
+    .SYNOPSIS
+        Restore the Windows 10-style "show all options" right-click menu on Windows 11.
+
+    .DESCRIPTION
+        Win11's compact context menu hides legacy "Open with...", "Send to",
+        "Cut/Copy/Paste", and third-party (VS Code, 7-Zip, etc.) entries
+        behind a "Show more options" submenu. The fix is a per-user (HKCU)
+        registry shim: create the CLSID
+        {86ca1aa0-34aa-4e8b-a509-50c905bae2a2} with an empty default value
+        under InprocServer32. No reboot needed -- only `explorer.exe` restart.
+
+        Idempotent: skips if the key already exists. No-op on Win10 / Server.
+    #>
+    param(
+        [string]$RootDir,
+        [bool]$AutoYes,
+        [hashtable]$Step
+    )
+
+    $build = 0
+    try {
+        $build = [int]([System.Environment]::OSVersion.Version.Build)
+    } catch {}
+    $isWin11 = $build -ge 22000
+    if (-not $isWin11) {
+        Write-Log "Classic context menu: not Win11 (build $build) -- skipping." -Level "info"
+        return
+    }
+
+    $clsid   = "{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
+    $regPath = "HKCU:\Software\Classes\CLSID\$clsid\InprocServer32"
+    $hasShim = Test-Path $regPath
+
+    if ($hasShim) {
+        Write-Log "Classic context menu shim already present at $regPath (skipping)." -Level "info"
+        return
+    }
+
+    try {
+        New-Item -Path $regPath -Force -ErrorAction Stop | Out-Null
+        Set-ItemProperty -Path $regPath -Name "(default)" -Value "" -ErrorAction Stop
+        Write-Log "Classic right-click menu restored (HKCU CLSID $clsid)." -Level "success"
+        Write-Host "  [ INFO ] Restart explorer.exe to apply: " -ForegroundColor Cyan -NoNewline
+        Write-Host "Stop-Process -Name explorer -Force; Start-Process explorer" -ForegroundColor White
+    } catch {
+        $err = $_.Exception.Message
+        Write-Log "Failed to write classic context menu shim. path=$regPath reason=$err" -Level "error"
+        throw "Classic context menu shim failed. path=$regPath reason=$err"
+    }
 }

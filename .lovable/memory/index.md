@@ -28,3 +28,4 @@ OneNote install (`onenote` keyword) must do ONLY OneNote. OneDrive disable lives
 - [Generic install spec (in design)](mem://features/generic-install-spec) — Cross-repo install behavior: strict tag mode, main fallback, v1..v20 parallel discovery. Awaiting 15-item checklist confirmation.
 - [Install bootstrap](mem://features/install-bootstrap) — scripts-fixer-vN auto-discovery installers (concrete instance of generic spec)
 - [Assets folder no-read](mem://constraints/assets-folder-noread) — Never read assets/ files into context
+- [Profile install locations](mem://features/02-profile-install-locations) — Per-profile install location matrix (C:\ system vs E:\dev-tool); README + spec + config.json must stay in sync

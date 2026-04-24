@@ -12,7 +12,7 @@
 [![Tools Installed](https://img.shields.io/badge/Tools-46%2B-8b5cf6?logo=tools&logoColor=white)](#what-it-does)
 [![Databases](https://img.shields.io/badge/Databases-12-0ea5e9?logo=databricks&logoColor=white)](#databases-18-29)
 [![License](https://img.shields.io/badge/License-MIT-eab308)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-v0.84.0-f97316)](scripts/version.json)
+[![Version](https://img.shields.io/badge/Version-v0.92.0-f97316)](scripts/version.json)
 [![Changelog](https://img.shields.io/badge/Changelog-Latest-ec4899)](changelog.md)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-22c55e)](https://github.com/alimtvnetwork/gitmap-v6)
@@ -119,69 +119,350 @@ anything is deleted.
 
 ## 🎯 Profiles — Curated Multi-Tool Installs
 
-Profiles are **named recipes** that bundle several scripts into a single
-command. Use them when you want a complete environment in one shot instead
-of remembering individual script IDs.
+Profiles are **named recipes** that bundle multiple installers into a
+single command. Pick one and you get a curated environment — no script
+IDs to remember, no order to figure out, no half-installed tools.
 
-| Profile | Command | What it sets up | Steps | Demo |
-|---------|---------|-----------------|:-----:|:----:|
-| **Minimal** | `.\run.ps1 profile minimal` | Fresh-Windows bootstrap: choco + git + 7zip + chrome | 4 | _(below)_ |
-| **Base** | `.\run.ps1 profile base` | Daily-driver Windows: package mgrs, media, browser, terminal, Notepad++, ConEmu, Ubuntu font, XMind, hibernation off, PSReadLine | 12 | _(see advance)_ |
-| **Git-compact** | `.\run.ps1 profile git-compact` | Git stack + GitHub Desktop + SSH key + GitHub dir + opinionated `.gitconfig` | 5 | _(below)_ |
-| **Advance** | `.\run.ps1 profile advance` | base + git-compact + WordWeb, Beyond Compare, OBS+settings, WhatsApp, VSCode + sync | ~25 | _(below)_ |
-| **C++ + DirectX** | `.\run.ps1 profile cpp-dx` | VC++ runtimes + DirectX runtime + DirectX SDK | 3 | _(none)_ |
-| **Small Dev** | `.\run.ps1 profile small-dev` | advance + Go + Python + Node.js + pnpm — tight everyday dev box | ~29 | _(below)_ |
+> 💡 **Where do these tools land?** Every profile's H3 section below has
+> an **install location matrix** showing exactly which files end up on
+> `C:\` (system installers via Chocolatey) versus `E:\dev-tool\` (dev
+> runtimes that respect `$env:DEV_DIR`). Override the dev drive with
+> `.\run.ps1 path D:\dev-tool` before running a profile.
+
+### Profile cheat sheet
+
+| Profile | One-liner | Tools | Steps | Best for |
+|---------|-----------|:-----:|:-----:|---------|
+| 🟢 [Minimal](#-profile-minimal) | `.\run.ps1 profile minimal -y` | 5 | 5 | Fresh Windows in 2 min |
+| 🔵 [Base](#-profile-base) | `.\run.ps1 profile base -y` | 12 | 12 | Daily-driver workstation |
+| 🟣 [Git-compact](#-profile-git-compact) | `.\run.ps1 profile git-compact -y` | 5 | 5 | Source-control box |
+| 🟠 [Advance](#-profile-advance) | `.\run.ps1 profile advance -y` | ~25 | ~25 | Full creator setup |
+| 🔴 [C++ + DirectX](#-profile-cpp--directx) | `.\run.ps1 profile cpp-dx -y` | 3 | 3 | Game / native dev |
+| 🟡 [Small Dev](#-profile-small-dev) | `.\run.ps1 profile small-dev -y` | ~29 | ~29 | Polyglot dev box |
 
 Source of truth: [`scripts/profile/config.json`](scripts/profile/config.json) ·
 spec: [`spec/2025-batch/12-profiles.md`](spec/2025-batch/12-profiles.md).
 
-### Profile demos
-
-#### `profile minimal` — 4-step bootstrap
-<p align="center">
-  <img src="assets/demos/run-profile-minimal.svg" alt="Demo: profile minimal — 4-step fresh Windows bootstrap" width="100%"/>
-</p>
-
-#### `profile git-compact` — git + ssh + GitHub dir
-<p align="center">
-  <img src="assets/demos/run-profile-git-compact.svg" alt="Demo: profile git-compact — git + ssh + GitHub dir + .gitconfig" width="100%"/>
-</p>
-
-#### `profile advance` — full developer profile (25 tools)
-<p align="center">
-  <img src="assets/demos/run-profile-advance.svg" alt="Demo: profile advance — full developer profile" width="100%"/>
-</p>
-
-#### `profile small-dev` — coding box with runtimes
-<p align="center">
-  <img src="assets/demos/run-profile-small-dev.svg" alt="Demo: profile small-dev — advance + Go/Python/Node/pnpm" width="100%"/>
-</p>
-
-### Profile commands
+### Profile commands (cheat sheet)
 
 ```powershell
 # List every profile + its expanded steps
 .\run.ps1 profile list
 
-# Dry-run any profile (prints expanded steps, executes nothing)
-.\run.ps1 profile advance --dry-run
-.\run.ps1 profile small-dev --dry-run     # expands advance -> base + git-compact + extras
+# Dry-run -- print expanded steps, execute nothing
+.\run.ps1 profile advance  --dry-run
+.\run.ps1 profile small-dev --dry-run        # expands advance -> base + git-compact + extras
 
-# Run for real (skip per-step prompts)
-.\run.ps1 profile minimal -y
-.\run.ps1 profile base
-.\run.ps1 profile git-compact
-.\run.ps1 profile advance
-.\run.ps1 profile cpp-dx
-.\run.ps1 profile small-dev
+# Run for real (skip per-step prompts with -y)
+.\run.ps1 profile minimal     -y
+.\run.ps1 profile base        -y
+.\run.ps1 profile git-compact -y
+.\run.ps1 profile advance     -y
+.\run.ps1 profile cpp-dx      -y
+.\run.ps1 profile small-dev   -y
 
 # Same thing via the install keyword family
 .\run.ps1 install profile-minimal
 .\run.ps1 install profile-base
-.\run.ps1 install profile-git           # alias for profile-git-compact
+.\run.ps1 install profile-git              # alias for profile-git-compact
 .\run.ps1 install profile-advance
 .\run.ps1 install profile-cpp-dx
 .\run.ps1 install profile-small-dev
+```
+
+---
+
+### 🟢 Profile: minimal
+
+**Fresh Windows in under two minutes.** Choco + Git + 7-Zip + Chrome,
+plus the Windows 11 classic right-click menu restore (no more "Show more
+options" submenu hiding VS Code, 7-Zip, etc.).
+
+**Copy-paste one-liner:**
+
+```powershell
+.\run.ps1 profile minimal -y
+```
+
+**What gets installed and where:**
+
+| # | Tool | Source | Install location | Drive |
+|:-:|------|--------|------------------|:-----:|
+| 1 | Chocolatey package manager | bootstrap | `C:\ProgramData\chocolatey\` | C:\ |
+| 2 | Git + Git LFS + gh | script #07 (choco) | `C:\Program Files\Git\` | C:\ |
+| 3 | 7-Zip archiver | choco `7zip.install` | `C:\Program Files\7-Zip\` | C:\ |
+| 4 | Google Chrome | choco `googlechrome` | `C:\Program Files\Google\Chrome\` | C:\ |
+| 5 | Win11 classic right-click menu | inline `Restore-Win11ClassicContext` | HKCU `Software\Classes\CLSID\{86ca1aa0-...}` | (registry) |
+
+> 🪟 **Win11 only — Step 5.** The classic right-click shim is a
+> well-known per-user (HKCU) registry tweak that makes Windows 11 stop
+> hiding "Open with…", "Send to", VS Code, 7-Zip, etc. behind the "Show
+> more options" submenu. Win10 / Server boxes simply skip this step.
+> Restart Explorer afterwards: `Stop-Process -Name explorer -Force; Start-Process explorer`.
+
+<p align="center">
+  <img src="assets/demos/run-profile-minimal-classic.svg" alt="Demo: profile minimal — bootstrap + Win11 classic right-click menu restore" width="100%"/>
+</p>
+
+---
+
+### 🔵 Profile: base
+
+**Daily-driver Windows.** Package managers, media playback, archivers,
+a fully-themed terminal, an editor, a font, XMind for mind-mapping, and
+hibernation disabled to free `C:\hiberfil.sys`. Includes everything in
+`minimal` plus media + ConEmu + Notepad++.
+
+**Copy-paste one-liner:**
+
+```powershell
+.\run.ps1 profile base -y
+```
+
+**What gets installed and where:**
+
+| # | Tool | Source | Install location | Drive |
+|:-:|------|--------|------------------|:-----:|
+| 1 | Chocolatey | script #02 | `C:\ProgramData\chocolatey\` | C:\ |
+| 2 | Git + LFS + gh | script #07 (choco) | `C:\Program Files\Git\` | C:\ |
+| 3 | VLC media player | choco `vlc` | `C:\Program Files\VideoLAN\VLC\` | C:\ |
+| 4 | 7-Zip | choco `7zip.install` | `C:\Program Files\7-Zip\` | C:\ |
+| 5 | WinRAR | choco `winrar` | `C:\Program Files\WinRAR\` | C:\ |
+| 6 | Ubuntu font family | script #47 | `C:\Windows\Fonts\` (system) | C:\ |
+| 7 | XMind | choco `xmind` | `C:\Program Files (x86)\XMind\` | C:\ |
+| 8 | Notepad++ + settings | script #33 (`install+settings`) | `C:\Program Files\Notepad++\` + `%APPDATA%\Notepad++\` | C:\ |
+| 9 | Google Chrome | choco `googlechrome` | `C:\Program Files\Google\Chrome\` | C:\ |
+| 10 | ConEmu + settings | script #48 (`install+settings`) | `C:\Program Files\ConEmu\` + `%APPDATA%\ConEmu.xml` | C:\ |
+| 11 | Disable hibernation | subcommand `os hib-off` | `powercfg /hibernate off` (frees `C:\hiberfil.sys`) | C:\ |
+| 12 | PSReadLine (latest) | inline | `%USERPROFILE%\Documents\WindowsPowerShell\Modules\PSReadLine\` | C:\ |
+
+> ℹ️ **No E:\dev-tool entries here.** `base` is purely OS hygiene + GUI
+> apps. Dev runtimes (Node, Python, Go, pnpm) come in via `small-dev`.
+
+<p align="center">
+  <img src="assets/demos/run-profile-advance.svg" alt="Demo: profile advance (which includes base) — full developer profile" width="100%"/>
+</p>
+
+---
+
+### 🟣 Profile: git-compact
+
+**Source-control box.** Git + GitHub Desktop + an `ed25519` SSH key
+(generated if missing) + a `~\GitHub` working directory + an opinionated
+`.gitconfig` (LFS filters, `safe.directory = *`, GitLab `insteadOf`).
+
+**Copy-paste one-liner:**
+
+```powershell
+.\run.ps1 profile git-compact -y
+```
+
+**What gets installed and where:**
+
+| # | Tool | Source | Install location | Drive |
+|:-:|------|--------|------------------|:-----:|
+| 1 | Git + LFS + gh | script #07 (choco) | `C:\Program Files\Git\` | C:\ |
+| 2 | GitHub Desktop | script #08 (per-user installer) | `%LOCALAPPDATA%\GitHubDesktop\` | C:\ |
+| 3 | SSH key (ed25519) | inline `Setup-SshKey` | `%USERPROFILE%\.ssh\id_ed25519` | C:\ |
+| 4 | Default GitHub dir | inline `Setup-GitHubDir` | `%USERPROFILE%\GitHub\` | C:\ |
+| 5 | Default `.gitconfig` | inline `Apply-DefaultGitConfig` | `%USERPROFILE%\.gitconfig` | C:\ |
+
+> 🔐 **SSH key flow.** If `~\.ssh\id_ed25519` already exists, it is
+> reused (never overwritten). If not, `ssh-keygen -t ed25519` is run with
+> the email pulled from `git config user.email` (fallback: `USER@HOST`).
+> The public key is printed and copied to your clipboard so you can paste
+> it into GitHub / GitLab / Bitbucket.
+
+<p align="center">
+  <img src="assets/demos/run-profile-git-compact.svg" alt="Demo: profile git-compact — git + ssh + GitHub dir + .gitconfig" width="100%"/>
+</p>
+
+---
+
+### 🟠 Profile: advance
+
+**Full creator + developer setup.** `base` + `git-compact` + WordWeb +
+Beyond Compare + OBS (with synced settings) + WhatsApp Desktop + VS Code
++ VS Code settings sync. About 25 tools end-to-end.
+
+**Copy-paste one-liner:**
+
+```powershell
+.\run.ps1 profile advance -y
+```
+
+**What gets installed and where (extras only — see `base` + `git-compact` for the rest):**
+
+| # | Tool | Source | Install location | Drive |
+|:-:|------|--------|------------------|:-----:|
+| — | All of `profile base` (12 steps) | recursive | _see above_ | C:\ |
+| — | All of `profile git-compact` (5 steps) | recursive | _see above_ | C:\ |
+| 18 | WordWeb dictionary | choco `wordweb-free` | `C:\Program Files (x86)\WordWeb\` | C:\ |
+| 19 | Beyond Compare | choco `beyondcompare` | `C:\Program Files\Beyond Compare 4\` | C:\ |
+| 20 | OBS Studio + settings | script #36 (`install+settings`) | `C:\Program Files\obs-studio\` + `%APPDATA%\obs-studio\` | C:\ |
+| 21 | WhatsApp Desktop | script #49 (choco) | `%LOCALAPPDATA%\WhatsApp\` | C:\ |
+| 22 | Visual Studio Code | script #01 | `%LOCALAPPDATA%\Programs\Microsoft VS Code\` | C:\ |
+| 23 | VS Code settings sync | script #11 | `%APPDATA%\Code\User\` + extensions | C:\ |
+
+<p align="center">
+  <img src="assets/demos/run-profile-advance.svg" alt="Demo: profile advance — full developer profile" width="100%"/>
+</p>
+
+---
+
+### 🔴 Profile: cpp + directx
+
+**Native / game dev runtime.** All Visual C++ redistributables + the
+DirectX end-user runtime + the legacy DirectX SDK. Three Choco packages,
+all system-drive.
+
+**Copy-paste one-liner:**
+
+```powershell
+.\run.ps1 profile cpp-dx -y
+```
+
+**What gets installed and where:**
+
+| # | Tool | Source | Install location | Drive |
+|:-:|------|--------|------------------|:-----:|
+| 1 | VC++ Redistributables (all years) | choco `vcredist-all` | `C:\Windows\System32\` (runtime DLLs) | C:\ |
+| 2 | DirectX runtime | choco `directx` | `C:\Windows\System32\` (DX DLLs) | C:\ |
+| 3 | DirectX SDK | choco `directx-sdk` | `C:\Program Files (x86)\Microsoft DirectX SDK\` | C:\ |
+
+---
+
+### 🟡 Profile: small-dev
+
+**Polyglot daily-driver dev box.** `advance` + the four runtimes you
+actually code in: Go, Python, Node.js, pnpm. The runtimes are the **only
+steps that land on E:\\dev-tool** — everything inherited from `advance`
+stays on C:\.
+
+**Copy-paste one-liner:**
+
+```powershell
+.\run.ps1 profile small-dev -y
+```
+
+**What gets installed and where (extras only — see `advance` for the rest):**
+
+| # | Tool | Source | Install location | Drive |
+|:-:|------|--------|------------------|:-----:|
+| — | All of `profile advance` (~25 steps) | recursive | _see above_ | C:\ |
+| 26 | Go (Golang) | script #06 | `E:\dev-tool\go\` (GOPATH + cache) | **E:\\** |
+| 27 | Python + pip | script #05 | `E:\dev-tool\python\` (incl. PYTHONUSERBASE) | **E:\\** |
+| 28 | Node.js + Yarn + Bun | script #03 | `E:\dev-tool\nodejs\` (npm global prefix) | **E:\\** |
+| 29 | pnpm | script #04 | `E:\dev-tool\pnpm\` (pnpm store) | **E:\\** |
+
+> 🧠 **Why E: by default?** The dev-dir resolver picks the drive with
+> the most free space (preferring `E:` then `D:`). If you only have `C:`,
+> all four runtimes land in `C:\dev-tool\` instead. Override anytime:
+> `.\run.ps1 path F:\my-dev-tool` — then re-run the profile.
+
+<p align="center">
+  <img src="assets/demos/run-profile-small-dev.svg" alt="Demo: profile small-dev — advance + Go/Python/Node/pnpm on E:\dev-tool" width="100%"/>
+</p>
+
+---
+
+### 🧠 XMind — what happens when this toolkit installs it
+
+XMind is **not a numbered script** — it ships as a single Choco step
+inside `profile base` (and therefore `advance` / `small-dev`). It is
+called out separately because it is the only commercial mind-mapper in
+the bundle, and people often want to know exactly what the toolkit does
+with it.
+
+| Question | Answer |
+|----------|--------|
+| **Where does it install?** | `C:\Program Files (x86)\XMind\` (system drive — Choco does not honor `$env:DEV_DIR` for GUI installers) |
+| **Which package?** | Chocolatey [`xmind`](https://community.chocolatey.org/packages/xmind) (the free / Zen edition) |
+| **Does it auto-start?** | No. We never enable autostart. |
+| **Is settings sync done?** | No. XMind has no `install+settings` mode in this toolkit. |
+| **Where are user files?** | `%APPDATA%\XMind\` (project files), `%USERPROFILE%\Documents\XMind\` (default workspace) |
+| **How to install just XMind?** | `choco install xmind -y` *or* `.\run.ps1 profile base -y` |
+| **How to uninstall?** | `choco uninstall xmind -y` (the toolkit does not track XMind separately) |
+
+> 🎯 **Want only XMind?** Skip the profile entirely:
+> ```powershell
+> choco install xmind -y
+> ```
+> The toolkit's profile path is only worth it if you also want the other
+> 11 tools in `base`.
+
+---
+
+### ⌨️ Multi-tool install — comma-separated keywords
+
+You don't have to use a profile to install several tools at once. The
+`install` keyword command accepts **comma-separated names, ID ranges,
+and even a mix of both** in a single line:
+
+<p align="center">
+  <img src="assets/demos/run-install-comma.svg" alt="Demo: typing one comma-separated install command and getting six tools in three minutes" width="100%"/>
+</p>
+
+**Big copy-paste one-liners — pick the row that matches your day:**
+
+```powershell
+# Front-end web dev (5 tools, ~3 min)
+.\run.ps1 install vscode,git,nodejs,pnpm,npp
+
+# Polyglot backend (7 tools, ~5 min)
+.\run.ps1 install vscode,git,nodejs,python,go,php,postgresql
+
+# 2025-batch desktop apps in one sweep (IDs 47..52)
+.\run.ps1 install 47..52
+
+# Mix & match: name + ID, in any order
+.\run.ps1 install vscode,11,git,nodejs,33-settings
+
+# Full data-science stack (Python + libs + DB + viewer)
+.\run.ps1 install python+ml,jupyter+libs,postgresql,dbeaver
+
+# All databases at once + DBeaver UI
+.\run.ps1 install 18..29,dbeaver
+```
+
+Comma rules:
+- **Case-insensitive** — `VSCode,GIT,NODEJS` works.
+- **Space or comma** separators — both `vscode,git` and `vscode git` parse.
+- **Auto-deduplicate** — `vscode,vscode,git` runs each step once.
+- **Sorted execution** — runs in script-ID order, so `pnpm,nodejs` still installs Node.js first.
+- **Keyword aliases** are expanded — see [`scripts/shared/install-keywords.json`](scripts/shared/install-keywords.json).
+
+> 🧠 **Profile vs comma-install — when to use which?**
+> Use a **profile** when you want a curated, opinionated environment
+> (e.g. `small-dev`) with the right install order and inline helpers
+> (SSH key, `.gitconfig`, etc.). Use **`install a,b,c`** when you know
+> exactly the handful of tools you want and don't need the extras.
+
+---
+
+### 🧱 What goes where — combined drive map
+
+Across **all** profiles, here's the global rule:
+
+| Path | What lands here | Triggered by |
+|------|------------------|--------------|
+| `C:\Program Files\` | Most Choco packages (Git, VLC, 7-Zip, OBS, Beyond Compare, ConEmu, Notepad++) | `choco` steps in any profile |
+| `C:\Program Files (x86)\` | XMind, WordWeb, DirectX SDK, WinRAR | `choco` steps in `base` / `advance` / `cpp-dx` |
+| `C:\ProgramData\chocolatey\` | Choco itself + per-package shims | `script #02` (always step 1) |
+| `%LOCALAPPDATA%\` | VS Code, GitHub Desktop, WhatsApp (per-user installers) | scripts #01, #08, #49 |
+| `%APPDATA%\` | Notepad++ / OBS / ConEmu **settings** that get synced from `settings/` | `install+settings` modes |
+| `%USERPROFILE%\.ssh\` | `id_ed25519` keypair (only if missing) | `git-compact` inline |
+| `%USERPROFILE%\.gitconfig` | LFS filters, `safe.directory=*`, GitLab url rewrite | `git-compact` inline |
+| `%USERPROFILE%\GitHub\` | Default working dir for GitHub Desktop | `git-compact` inline |
+| `HKCU\Software\Classes\CLSID\{86ca1aa0-...}` | Win11 classic right-click menu shim | `minimal` inline |
+| `E:\dev-tool\` (or smart-detected) | `go\`, `nodejs\`, `python\`, `pnpm\` | `small-dev` runtime steps |
+
+Override the dev drive globally before running any profile:
+
+```powershell
+.\run.ps1 path D:\dev-tool       # set
+.\run.ps1 path                   # show current
+.\run.ps1 path --reset           # back to smart detection
 ```
 
 > 🧠 **What's in each profile?** Open
