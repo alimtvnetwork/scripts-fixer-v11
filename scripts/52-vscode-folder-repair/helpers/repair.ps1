@@ -388,8 +388,16 @@ function Test-VsCodeHandlersRegistered {
         in removeFromTargets MUST be absent. Anything else is reported
         as SKIP.
 
-        Returns $true only when every in-scope target is in the expected
-        state across every enabled edition.
+        Returns a hashtable:
+            @{
+                ok           = [bool]   # true only when all in-scope checks passed
+                totalChecked = [int]
+                totalFailed  = [int]
+                editions     = [ordered]@{ <name> = @{ label=..; targets = @( @{...} ) } }
+            }
+        Each target entry contains: target, registryPath, expected
+        ('present'|'absent'|'out-of-scope'), keyPresent, commandPresent,
+        commandValue, status ('PASS'|'FAIL'|'SKIP'), reason.
     #>
     param(
         [PSObject]$Config,
@@ -411,16 +419,24 @@ function Test-VsCodeHandlersRegistered {
 
     $totalChecked = 0
     $totalFailed  = 0
+    $editionsReport = [ordered]@{}
 
     foreach ($editionName in $editions) {
         $editionCfg = $Config.editions.$editionName
         if ($null -eq $editionCfg) {
             Write-Host ("  Edition: $editionName -- UNKNOWN, skipping") -ForegroundColor DarkYellow
+            $editionsReport[$editionName] = @{
+                label   = $null
+                known   = $false
+                targets = @()
+            }
             continue
         }
 
         $line = ($LogMsgs.messages.verifyHandlersEdition -replace '\{edition\}', $editionName) -replace '\{label\}', $editionCfg.contextMenuLabel
         Write-Host $line -ForegroundColor White
+
+        $targetsReport = @()
 
         foreach ($target in $allTargets) {
             $regPath = $editionCfg.registryPaths.$target
@@ -428,6 +444,16 @@ function Test-VsCodeHandlersRegistered {
             if (-not $hasPath) {
                 $msg = ($LogMsgs.messages.verifyHandlersTargetSkip -replace '\{target\}', $target) -replace '\{path\}', '(no registry path configured)'
                 Write-Host $msg -ForegroundColor DarkGray
+                $targetsReport += @{
+                    target          = $target
+                    registryPath    = $null
+                    expected        = 'unconfigured'
+                    keyPresent      = $null
+                    commandPresent  = $null
+                    commandValue    = $null
+                    status          = 'SKIP'
+                    reason          = 'No registry path configured for this target.'
+                }
                 continue
             }
 
@@ -437,6 +463,16 @@ function Test-VsCodeHandlersRegistered {
             if (-not $isInScope) {
                 $msg = ($LogMsgs.messages.verifyHandlersTargetSkip -replace '\{target\}', $target) -replace '\{path\}', $regPath
                 Write-Host $msg -ForegroundColor DarkGray
+                $targetsReport += @{
+                    target          = $target
+                    registryPath    = $regPath
+                    expected        = 'out-of-scope'
+                    keyPresent      = $null
+                    commandPresent  = $null
+                    commandValue    = $null
+                    status          = 'SKIP'
+                    reason          = 'Target not in ensureOnTargets or removeFromTargets.'
+                }
                 continue
             }
 
@@ -461,11 +497,17 @@ function Test-VsCodeHandlersRegistered {
                 }
             }
 
+            $expectedLabel = if ($isExpectedPresent) { 'present' } else { 'absent' }
+            $entryStatus = 'FAIL'
+            $entryReason = ''
+
             if ($isExpectedPresent) {
                 $isPass = $isKeyPresent -and $isCmdPresent -and -not [string]::IsNullOrWhiteSpace($cmdValue)
                 if ($isPass) {
                     $msg = (($LogMsgs.messages.verifyHandlersTargetPass -replace '\{target\}', $target) -replace '\{command\}', $cmdValue)
                     Write-Host $msg -ForegroundColor Green
+                    $entryStatus = 'PASS'
+                    $entryReason = 'Key + \command + non-empty (Default) value all present.'
                 } else {
                     $reason = if (-not $isKeyPresent) { 'expected PRESENT but key is missing' }
                               elseif (-not $isCmdPresent) { 'key present but \command subkey missing' }
@@ -473,30 +515,172 @@ function Test-VsCodeHandlersRegistered {
                     $msg = (($LogMsgs.messages.verifyHandlersTargetFail -replace '\{target\}', $target) -replace '\{reason\}', $reason) -replace '\{path\}', $regPath
                     Write-Host $msg -ForegroundColor Red
                     $totalFailed++
+                    $entryReason = $reason
                 }
             } else {
                 # Expected absent
                 if (-not $isKeyPresent) {
                     $msg = (($LogMsgs.messages.verifyHandlersTargetPass -replace '\{target\}', $target) -replace '\{command\}', '(absent as expected)')
                     Write-Host $msg -ForegroundColor Green
+                    $entryStatus = 'PASS'
+                    $entryReason = 'Key absent as expected.'
                 } else {
                     $reason = 'expected ABSENT but key is still PRESENT'
                     $msg = (($LogMsgs.messages.verifyHandlersTargetFail -replace '\{target\}', $target) -replace '\{reason\}', $reason) -replace '\{path\}', $regPath
                     Write-Host $msg -ForegroundColor Red
                     $totalFailed++
+                    $entryReason = $reason
                 }
             }
+
+            $targetsReport += @{
+                target          = $target
+                registryPath    = $regPath
+                expected        = $expectedLabel
+                keyPresent      = [bool]$isKeyPresent
+                commandPresent  = [bool]$isCmdPresent
+                commandValue    = $cmdValue
+                status          = $entryStatus
+                reason          = $entryReason
+            }
+        }
+
+        $editionsReport[$editionName] = @{
+            label   = $editionCfg.contextMenuLabel
+            known   = $true
+            targets = $targetsReport
         }
     }
 
     Write-Host ""
+    $isOverallPass = ($totalFailed -eq 0 -and $totalChecked -gt 0)
     if ($totalFailed -eq 0 -and $totalChecked -gt 0) {
         Write-Host $LogMsgs.messages.verifyHandlersOverallPass -ForegroundColor Green
         Write-Log  $LogMsgs.messages.verifyHandlersOverallPass -Level "success"
-        return $true
+    } else {
+        $line = ($LogMsgs.messages.verifyHandlersOverallFail -replace '\{failed\}', $totalFailed) -replace '\{total\}', $totalChecked
+        Write-Host $line -ForegroundColor Red
+        Write-Log  $line -Level "error"
     }
-    $line = ($LogMsgs.messages.verifyHandlersOverallFail -replace '\{failed\}', $totalFailed) -replace '\{total\}', $totalChecked
-    Write-Host $line -ForegroundColor Red
-    Write-Log  $line -Level "error"
-    return $false
+
+    return @{
+        ok           = $isOverallPass
+        totalChecked = $totalChecked
+        totalFailed  = $totalFailed
+        editions     = $editionsReport
+    }
+}
+
+function Save-VerificationReport {
+    <#
+    .SYNOPSIS
+        Persists a verification result hashtable as a JSON troubleshooting
+        report under .resolved/52-vscode-folder-repair/verify-reports/.
+
+    .DESCRIPTION
+        Writes one timestamped file per call (so users can compare runs)
+        AND mirrors the latest run to 'verify-latest.json' for quick sharing.
+
+        Report shape:
+            {
+              "schemaVersion": 1,
+              "scriptVersion": "0.x.y",
+              "generatedAt":   "<ISO-8601 local>",
+              "generatedAtUtc":"<ISO-8601 UTC>",
+              "host": { "computer": "...", "user": "...", "os": "...", "psVersion": "..." },
+              "trigger": "refresh-verify" | "verify-handlers",
+              "editionFilter": "" | "stable" | "insiders",
+              "summary": { "ok": bool, "totalChecked": n, "totalFailed": n },
+              "editions": { ... per-target detail ... }
+            }
+
+    .PARAMETER Result
+        The hashtable returned by Test-VsCodeHandlersRegistered.
+
+    .PARAMETER Trigger
+        Free-form label describing what produced the report
+        (e.g. 'refresh-verify' or 'verify-handlers').
+
+    .PARAMETER EditionFilter
+        The -Edition value used for the run (or '' for all editions).
+
+    .PARAMETER ScriptDir
+        Path to the script folder (used to derive .resolved/<folder>/).
+
+    .PARAMETER LogMsgs
+        Log-messages object for status output.
+    #>
+    param(
+        [Parameter(Mandatory)] [hashtable]$Result,
+        [Parameter(Mandatory)] [string]$Trigger,
+        [string]$EditionFilter = '',
+        [Parameter(Mandatory)] [string]$ScriptDir,
+        [PSObject]$LogMsgs
+    )
+
+    try {
+        # repo-root/.resolved/52-vscode-folder-repair/verify-reports/
+        $repoRoot   = Split-Path -Parent (Split-Path -Parent $ScriptDir)
+        $scriptName = Split-Path -Leaf $ScriptDir
+        $reportsDir = Join-Path (Join-Path $repoRoot ".resolved") $scriptName
+        $reportsDir = Join-Path $reportsDir "verify-reports"
+
+        $isDirMissing = -not (Test-Path -LiteralPath $reportsDir)
+        if ($isDirMissing) {
+            New-Item -Path $reportsDir -ItemType Directory -Force | Out-Null
+        }
+
+        # Pull script version from scripts/version.json (best-effort).
+        $versionPath = Join-Path (Split-Path -Parent $ScriptDir) "version.json"
+        $scriptVersion = "unknown"
+        if (Test-Path -LiteralPath $versionPath) {
+            try {
+                $vRaw = Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json
+                if ($vRaw.PSObject.Properties.Name -contains 'version') {
+                    $scriptVersion = [string]$vRaw.version
+                }
+            } catch { }
+        }
+
+        $now    = Get-Date
+        $report = [ordered]@{
+            schemaVersion  = 1
+            scriptVersion  = $scriptVersion
+            generatedAt    = $now.ToString("o")
+            generatedAtUtc = $now.ToUniversalTime().ToString("o")
+            host           = [ordered]@{
+                computer  = $env:COMPUTERNAME
+                user      = $env:USERNAME
+                os        = (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
+                psVersion = $PSVersionTable.PSVersion.ToString()
+            }
+            trigger        = $Trigger
+            editionFilter  = $EditionFilter
+            summary        = [ordered]@{
+                ok           = [bool]$Result.ok
+                totalChecked = [int]$Result.totalChecked
+                totalFailed  = [int]$Result.totalFailed
+            }
+            editions       = $Result.editions
+        }
+
+        $stamp     = $now.ToString("yyyyMMdd-HHmmss")
+        $statusTag = if ($Result.ok) { "PASS" } else { "FAIL" }
+        $fileName  = "verify-$Trigger-$statusTag-$stamp.json"
+        $filePath  = Join-Path $reportsDir $fileName
+        $latestPath = Join-Path $reportsDir "verify-latest.json"
+
+        $json = $report | ConvertTo-Json -Depth 12
+        [System.IO.File]::WriteAllText($filePath,   $json)
+        [System.IO.File]::WriteAllText($latestPath, $json)
+
+        Write-Log (($LogMsgs.messages.verifyReportSaved -replace '\{path\}', $filePath))   -Level "success"
+        Write-Log (($LogMsgs.messages.verifyReportLatest -replace '\{path\}', $latestPath)) -Level "info"
+        return $filePath
+    } catch {
+        $msg = $_.Exception.Message
+        $errPath = if ($filePath) { $filePath } else { '(unresolved -- error before path computed)' }
+        Write-Log (($LogMsgs.messages.verifyReportFailed -replace '\{path\}', $errPath) -replace '\{error\}', $msg) -Level "error"
+        return $null
+    }
 }

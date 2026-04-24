@@ -54,6 +54,10 @@
     "verifyHandlersOverallPass": "Overall: PASS -- all expected handlers are registered.",
     "verifyHandlersOverallFail": "Overall: FAIL -- {failed} handler(s) missing or invalid out of {total} checked.",
     "verifyHandlersStart": "Verifying VS Code context menu handlers are registered...",
+    "verifyReportSaved":   "Verification report saved: {path}",
+    "verifyReportLatest":  "Latest report mirror: {path}",
+    "verifyReportFailed":  "FAILED to write verification report at {path} -- {error}",
+    "verifyReportSkipped": "Verification report skipped (use --report to enable on standalone runs).",
     "done": "Folder-only context menu repair completed successfully.",
     "completedWithWarnings": "Repair completed with warnings -- check output above.",
     "unknownEdition": "Unknown edition '{name}' in enabledEditions -- skipping",
@@ -101,8 +105,10 @@
         ".\\run.ps1 refresh --both                             # explicit: both notifications (same as default)",
       ".\\run.ps1 refresh --restart                          # minimum refresh PLUS full explorer.exe restart fallback",
       ".\\run.ps1 refresh --verify                           # refresh, then check handlers and print PASS/FAIL",
+      ".\\run.ps1 refresh --verify -Edition stable          # refresh + verify, scoped, JSON report saved",
       ".\\run.ps1 verify-handlers                            # standalone PASS/FAIL check (no writes, no refresh)",
       ".\\run.ps1 verify-handlers -Edition stable            # check only the stable edition",
+      ".\\run.ps1 verify-handlers --report                   # ALSO save JSON troubleshooting report",
       ".\\run.ps1 help"
     ],
     "refresh": {
@@ -133,10 +139,10 @@
         },
         {
           "name": "4. Post-refresh verification  [opt-in]",
-          "what": "After the refresh, runs 'verify-handlers' which queries each target key + its \\command (Default) value and prints PASS/FAIL per edition/target. Read-only.",
+          "what": "After the refresh, runs 'verify-handlers' which queries each target key + its \\command (Default) value and prints PASS/FAIL per edition/target. ALWAYS writes a timestamped JSON troubleshooting report under .resolved/52-vscode-folder-repair/verify-reports/ (plus 'verify-latest.json' for quick sharing).",
           "when": "Use in CI / unattended runs to fail fast when the registry state did not match expectations.",
           "enabledBy": "OFF by default. Add '--verify' to enable. Honors '-Edition' to scope the check.",
-          "sideEffects": "None. Exit code becomes non-zero if any in-scope handler is missing or invalid."
+          "sideEffects": "Writes JSON file(s) under .resolved/. Exit code becomes non-zero if any in-scope handler is missing or invalid."
         }
       ],
       "flags": [
@@ -144,7 +150,7 @@
         { "flag": "--broadcast-only", "effect": "Send ONLY step 2 (WM_SETTINGCHANGE). Skips step 1." },
         { "flag": "--both",           "effect": "Send steps 1 AND 2. This is the default; flag is accepted for clarity." },
         { "flag": "--restart / --full", "effect": "ALSO run step 3 (kill + relaunch explorer.exe). Combines with any of the above." },
-        { "flag": "--verify",         "effect": "ALSO run step 4 (handler PASS/FAIL check) after the refresh." },
+        { "flag": "--verify",         "effect": "ALSO run step 4 (handler PASS/FAIL check) after the refresh. Always saves a JSON troubleshooting report under .resolved/52-vscode-folder-repair/verify-reports/." },
         { "flag": "-Edition <name>",  "effect": "Scope step 4 to one edition: 'stable' or 'insiders'. No effect on steps 1-3." }
       ],
       "rules": [

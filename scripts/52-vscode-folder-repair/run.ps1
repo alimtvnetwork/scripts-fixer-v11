@@ -165,8 +165,22 @@ switch ($Command.ToLower()) {
     'restore'    { Invoke-ManualRepair -Extra @{ RestoreDefaultEntries = $true } }
     'rollback'   { Invoke-Rollback }
     'verify-handlers' {
-        $ok = Test-VsCodeHandlersRegistered -Config $config -LogMsgs $logMessages -EditionFilter $Edition
-        if ($ok) { exit 0 } else { exit 1 }
+        # Optional --report flag (off by default for standalone read-only runs).
+        $isReportRequested = $false
+        if ($null -ne $Rest -and $Rest.Count -gt 0) {
+            foreach ($a in $Rest) {
+                $low = "$a".Trim().ToLower()
+                if ($low -in @('--report','-report','report')) { $isReportRequested = $true }
+            }
+        }
+
+        $result = Test-VsCodeHandlersRegistered -Config $config -LogMsgs $logMessages -EditionFilter $Edition
+        if ($isReportRequested) {
+            $null = Save-VerificationReport -Result $result -Trigger 'verify-handlers' -EditionFilter $Edition -ScriptDir $scriptDir -LogMsgs $logMessages
+        } else {
+            Write-Log $logMessages.messages.verifyReportSkipped -Level "info"
+        }
+        if ($result.ok) { exit 0 } else { exit 1 }
     }
     'refresh'    {
         # Per-subcommand help: '.\run.ps1 refresh --help' / '-help' / 'help'
@@ -228,7 +242,10 @@ switch ($Command.ToLower()) {
                 -SendBroadcast $sendBroadcast
         $verifyOk = $true
         if ($isPostVerify) {
-            $verifyOk = Test-VsCodeHandlersRegistered -Config $config -LogMsgs $logMessages -EditionFilter $Edition
+            $result   = Test-VsCodeHandlersRegistered -Config $config -LogMsgs $logMessages -EditionFilter $Edition
+            $verifyOk = $result.ok
+            # --verify ALWAYS writes a JSON troubleshooting report so it can be shared.
+            $null = Save-VerificationReport -Result $result -Trigger 'refresh-verify' -EditionFilter $Edition -ScriptDir $scriptDir -LogMsgs $logMessages
         }
         if ($ok -and $verifyOk) { exit 0 } else { exit 1 }
     }
