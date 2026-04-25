@@ -392,7 +392,39 @@ if ($script:failN -gt 0) {
         Write-C ("  [Case {0}] {1}" -f $_.Case, $_.Name) "Red"
         if ($_.Detail) { Write-C ("            {0}" -f $_.Detail) "DarkGray" }
     }
-    exit 1
+    if (-not $ExitCodeMap) { exit 1 }
+
+    # Granular CI-friendly exit code mapping. Group failures by case range:
+    #   Cases 1-5  = install-state
+    #   Case  6    = file-target present     -> 20
+    #   Case  7    = suppression values      -> 21
+    #   Case  8    = legacy duplicates       -> 22
+    $failedCases = @($script:results | Where-Object Status -eq "FAIL" | ForEach-Object { $_.Case } | Sort-Object -Unique)
+    $hasInstall = $false
+    $invariantBuckets = @()
+    foreach ($c in $failedCases) {
+        if ($c -ge 1 -and $c -le 5) { $hasInstall = $true; continue }
+        switch ($c) {
+            6 { $invariantBuckets += 20 }
+            7 { $invariantBuckets += 21 }
+            8 { $invariantBuckets += 22 }
+        }
+    }
+    $invariantBuckets = @($invariantBuckets | Sort-Object -Unique)
+    $hasInvariant    = $invariantBuckets.Count -gt 0
+    $isMixed         = $hasInstall -and $hasInvariant
+    $isMultiInvariant = (-not $hasInstall) -and ($invariantBuckets.Count -ge 2)
+
+    $code = 1
+    if ($isMixed)              { $code = 40 }
+    elseif ($isMultiInvariant) { $code = 30 }
+    elseif ($hasInvariant)     { $code = $invariantBuckets[0] }
+    elseif ($hasInstall)       { $code = 10 }
+
+    Write-C ""
+    Write-C ("CI exit code (ExitCodeMap=on): " + $code) "Yellow"
+    Write-C "  Legend: 10=install-state, 20=file-target, 21=suppression, 22=legacy, 30=multi-invariant, 40=mixed" "DarkGray"
+    exit $code
 }
 
 Write-C "All cases passed." "Green"
