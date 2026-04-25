@@ -95,6 +95,31 @@ if ($cmdLower -eq 'check') {
     $oneShot = if ([string]::IsNullOrWhiteSpace($Edition)) { ".\run.ps1 repair" } else { ".\run.ps1 repair -Edition " + $Edition }
     Write-Check10MissActionSummary -ScriptInvocationHint $oneShot
 
+    # ---- Interactive prompt block (opt-in; preserves all existing exits)----
+    # Only engages when at least one of the flags is set AND we have misses
+    # to act on. CI is preserved: -ExitCodeMap suppresses prompts unless
+    # -AssumeYes is also explicitly passed.
+    $wantInteractive = ($Interactive -or $PromptEach -or $PromptOneShot)
+    $hasMisses       = $totalMiss -gt 0
+    $isCiMode        = $ExitCodeMap -and (-not $AssumeYes)
+    if ($wantInteractive -and $hasMisses -and -not $isCiMode) {
+        $mode = 'oneshot'
+        if ($PromptEach -and $PromptOneShot) { $mode = 'both' }
+        elseif ($PromptEach)                 { $mode = 'each' }
+        elseif ($PromptOneShot)              { $mode = 'oneshot' }
+        # Bare -Interactive defaults to one-shot prompt only.
+
+        $thisRunPs1 = Join-Path $scriptDir "run.ps1"
+        $null = Invoke-Check10Interactive `
+            -Mode $mode `
+            -OneShotCommand $oneShot `
+            -RunScriptPath $thisRunPs1 `
+            -AssumeYes:$AssumeYes `
+            -DryRun:$DryRun
+    } elseif ($wantInteractive -and $isCiMode) {
+        Write-Log "Interactive flags ignored: -ExitCodeMap is on (CI mode). Pass -AssumeYes alongside -ExitCodeMap to force non-interactive auto-fix." -Level "warn"
+    }
+
     if ($totalMiss -le 0) { exit 0 }
     if (-not $ExitCodeMap) { exit 1 }
 
