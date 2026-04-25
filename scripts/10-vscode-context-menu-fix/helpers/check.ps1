@@ -225,11 +225,49 @@ function Invoke-Script10MenuCheck {
             $tag = if ($targetName -eq 'directory') { 'folder    ' }
                    elseif ($targetName -eq 'background') { 'background' }
                    else { 'file      ' }
-            $line = "  [{0}] {1}  {2}" -f $st.verdict, $tag, $regPath
+            $regExe = ConvertTo-Check10RegExePath $regPath
+            $line = "  [{0}] {1}  {2}" -f $st.verdict, $tag, $regExe
             $level = if ($st.verdict -eq 'PASS') { 'success' } else { 'error' }
             Write-Log $line -Level $level
-            if ($st.verdict -ne 'PASS' -and $st.reason) {
-                Write-Log ("           reason: " + $st.reason + " (failure path: " + $regPath + ")") -Level "error"
+            if ($st.verdict -ne 'PASS') {
+                # Build precise per-failure detail. We list every distinct
+                # cause as its own bullet so the user knows exactly what to
+                # fix without re-reading the upstream log.
+                $bullets = @()
+                $items   = @()
+                if (-not $st.keyExists) {
+                    $bullets += "registry key NOT FOUND: " + $regExe
+                    $items   += "<missing key>"
+                } else {
+                    if (-not $st.labelOk) {
+                        $bullets += "value '(Default)' = '" + $st.actualLabel + "' (expected '" + $ed.contextMenuLabel + "')"
+                        $items   += "(Default)"
+                    }
+                    if (-not $st.iconPresent) {
+                        $bullets += "value 'Icon' is missing or empty"
+                        $items   += "Icon"
+                    }
+                    if (-not $st.commandPresent) {
+                        $bullets += "subkey '\command' (Default) is missing or empty"
+                        $items   += "\command\(Default)"
+                    } elseif (-not $st.exeResolvable) {
+                        $exeShown = if ($st.exePath) { $st.exePath } else { '<unparseable>' }
+                        $bullets += "exe path NOT ON DISK: " + $exeShown
+                        $items   += "\command\(Default) -> exe"
+                    }
+                }
+                if ($bullets.Count -eq 0) { $bullets = @($st.reason) }
+
+                Write-Log ("           Path : " + $regExe) -Level "error"
+                foreach ($b in $bullets) {
+                    Write-Log ("           Why  : " + $b) -Level "error"
+                }
+                Write-Log ("           Fix  : .\run.ps1 repair -Edition " + $edName + "   (re-asserts label/Icon/command from config + resolves exe via installationType)") -Level "warn"
+
+                Add-Check10MissAction -Edition $edName -Category 'install' -Target $targetName `
+                    -RegPath $regExe -Items $items `
+                    -Reason ($bullets -join '; ') `
+                    -FixHint (".\run.ps1 repair -Edition " + $edName)
             }
             if ($st.verdict -eq 'PASS') { $totalPass++ } else { $totalMiss++ }
         }
