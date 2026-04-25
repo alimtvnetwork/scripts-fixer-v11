@@ -46,7 +46,8 @@ function Add-Check10MissAction {
         [Parameter(Mandatory)] [string] $RegPath,  # HKCR\... (reg.exe-friendly, no Registry::)
         [string[]] $Items   = @(),                 # value names / child names
         [Parameter(Mandatory)] [string] $Reason,
-        [Parameter(Mandatory)] [string] $FixHint   # exact next command
+        [Parameter(Mandatory)] [string] $FixHint,  # exact next command
+        [string] $InvariantCode = ''               # I1-FILE-TARGET | I2-SUPPRESSION | I3-LEGACY-DUP | INSTALL-STATE
     )
     $script:Check10MissActions += [pscustomobject]@{
         edition  = $Edition
@@ -56,6 +57,7 @@ function Add-Check10MissAction {
         items    = @($Items)
         reason   = $Reason
         fixHint  = $FixHint
+        invariantCode = $InvariantCode
     }
 }
 
@@ -78,7 +80,9 @@ function Write-Check10MissActionSummary {
     foreach ($a in $actions) {
         $i++
         Write-Log "" -Level "info"
-        Write-Log ("  [" + $i + "/" + $actions.Count + "] edition=" + $a.edition + "  category=" + $a.category + "  target=" + $a.target) -Level "error"
+        $codeTag = if ($a.invariantCode) { $a.invariantCode } else { '<unspecified>' }
+        Write-Log ("  [" + $i + "/" + $actions.Count + "] [" + $codeTag + "] edition=" + $a.edition + "  category=" + $a.category + "  target=" + $a.target) -Level "error"
+        Write-Log ("        Invariant: " + $codeTag + "  (" + (Get-Check10InvariantDescription -Code $codeTag) + ")") -Level "error"
         Write-Log ("        Path  : " + $a.regPath) -Level "error"
         if ($a.items.Count -gt 0) {
             Write-Log ("        Items : " + ($a.items -join ', ')) -Level "error"
@@ -93,7 +97,24 @@ function Write-Check10MissActionSummary {
     Write-Log "" -Level "info"
     Write-Log "  One-shot fix for ALL of the above:" -Level "warn"
     Write-Log ("      " + $ScriptInvocationHint) -Level "warn"
+    Write-Log "" -Level "info"
+    Write-Log "  Invariant code legend:" -Level "warn"
+    Write-Log "      INSTALL-STATE   missing key, wrong (Default) label, missing Icon, or unresolvable exe in \command" -Level "warn"
+    Write-Log "      I1-FILE-TARGET  HKCR\*\shell\<Name> still present (menu would appear on individual files)" -Level "warn"
+    Write-Log "      I2-SUPPRESSION  ProgrammaticAccessOnly / AppliesTo / NoWorkingDirectory / LegacyDisable / CommandFlags set" -Level "warn"
+    Write-Log "      I3-LEGACY-DUP   duplicate sibling key from a prior install (sweeps allow-listed legacyNames only)" -Level "warn"
     Write-Log "================================================================================" -Level "warn"
+}
+
+function Get-Check10InvariantDescription {
+    param([string]$Code)
+    switch ($Code) {
+        'I1-FILE-TARGET' { return 'file-target key still present' }
+        'I2-SUPPRESSION' { return 'forbidden value name(s) on directory/background' }
+        'I3-LEGACY-DUP'  { return 'legacy duplicate sibling key(s) under shell parent' }
+        'INSTALL-STATE'  { return 'install-state mismatch (key/label/icon/command)' }
+        default          { return 'unspecified' }
+    }
 }
 
 function Get-HkcrSubPath10 {
