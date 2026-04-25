@@ -32,9 +32,80 @@ $script:Check10SuppressionValues = @(
     'LegacyDisable','CommandFlags'
 )
 
+# Module-level MISS collector. Reset at the top of each top-level check call
+# so the run.ps1 wrapper can print one consolidated "what to do next" block.
+$script:Check10MissActions = @()
+
+function Reset-Check10MissActions { $script:Check10MissActions = @() }
+
+function Add-Check10MissAction {
+    param(
+        [Parameter(Mandatory)] [string] $Edition,
+        [Parameter(Mandatory)] [string] $Category, # install | invariant
+        [Parameter(Mandatory)] [string] $Target,   # file | directory | background | parent
+        [Parameter(Mandatory)] [string] $RegPath,  # HKCR\... (reg.exe-friendly, no Registry::)
+        [string[]] $Items   = @(),                 # value names / child names
+        [Parameter(Mandatory)] [string] $Reason,
+        [Parameter(Mandatory)] [string] $FixHint   # exact next command
+    )
+    $script:Check10MissActions += [pscustomobject]@{
+        edition  = $Edition
+        category = $Category
+        target   = $Target
+        regPath  = $RegPath
+        items    = @($Items)
+        reason   = $Reason
+        fixHint  = $FixHint
+    }
+}
+
+function Get-Check10MissActions { return ,@($script:Check10MissActions) }
+
+function Write-Check10MissActionSummary {
+    param([Parameter(Mandatory)][string]$ScriptInvocationHint)
+    $actions = $script:Check10MissActions
+    if ($actions.Count -eq 0) { return }
+
+    Write-Log "" -Level "info"
+    Write-Log "===============================  ACTION SUMMARY  ===============================" -Level "warn"
+    Write-Log ("  " + $actions.Count + " MISS finding(s) require attention. Each block below shows:") -Level "warn"
+    Write-Log "    - the EXACT registry path triggering the miss" -Level "warn"
+    Write-Log "    - the value or child names involved (if any)" -Level "warn"
+    Write-Log "    - the next command to run to fix it" -Level "warn"
+    Write-Log "================================================================================" -Level "warn"
+
+    $i = 0
+    foreach ($a in $actions) {
+        $i++
+        Write-Log "" -Level "info"
+        Write-Log ("  [" + $i + "/" + $actions.Count + "] edition=" + $a.edition + "  category=" + $a.category + "  target=" + $a.target) -Level "error"
+        Write-Log ("        Path  : " + $a.regPath) -Level "error"
+        if ($a.items.Count -gt 0) {
+            Write-Log ("        Items : " + ($a.items -join ', ')) -Level "error"
+            foreach ($it in $a.items) {
+                Write-Log ("                  - " + $it) -Level "error"
+            }
+        }
+        Write-Log ("        Why   : " + $a.reason) -Level "error"
+        Write-Log ("        Fix   : " + $a.fixHint) -Level "warn"
+    }
+
+    Write-Log "" -Level "info"
+    Write-Log "  One-shot fix for ALL of the above:" -Level "warn"
+    Write-Log ("      " + $ScriptInvocationHint) -Level "warn"
+    Write-Log "================================================================================" -Level "warn"
+}
+
 function Get-HkcrSubPath10 {
     param([string]$PsPath)
     return ($PsPath -replace '^Registry::HKEY_CLASSES_ROOT\\', '')
+}
+
+function ConvertTo-Check10RegExePath {
+    # Strip the PowerShell-only "Registry::" prefix so the path is something
+    # the user can paste straight into `reg.exe query <path>`.
+    param([string]$PsPath)
+    return ($PsPath -replace '^Registry::', '')
 }
 
 function Get-Check10MenuEntryStatus {
