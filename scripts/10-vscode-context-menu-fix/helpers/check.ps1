@@ -46,7 +46,8 @@ function Add-Check10MissAction {
         [Parameter(Mandatory)] [string] $RegPath,  # HKCR\... (reg.exe-friendly, no Registry::)
         [string[]] $Items   = @(),                 # value names / child names
         [Parameter(Mandatory)] [string] $Reason,
-        [Parameter(Mandatory)] [string] $FixHint   # exact next command
+        [Parameter(Mandatory)] [string] $FixHint,  # exact next command
+        [string] $InvariantCode = ''               # I1-FILE-TARGET | I2-SUPPRESSION | I3-LEGACY-DUP | INSTALL-STATE
     )
     $script:Check10MissActions += [pscustomobject]@{
         edition  = $Edition
@@ -56,6 +57,7 @@ function Add-Check10MissAction {
         items    = @($Items)
         reason   = $Reason
         fixHint  = $FixHint
+        invariantCode = $InvariantCode
     }
 }
 
@@ -78,7 +80,9 @@ function Write-Check10MissActionSummary {
     foreach ($a in $actions) {
         $i++
         Write-Log "" -Level "info"
-        Write-Log ("  [" + $i + "/" + $actions.Count + "] edition=" + $a.edition + "  category=" + $a.category + "  target=" + $a.target) -Level "error"
+        $codeTag = if ($a.invariantCode) { $a.invariantCode } else { '<unspecified>' }
+        Write-Log ("  [" + $i + "/" + $actions.Count + "] [" + $codeTag + "] edition=" + $a.edition + "  category=" + $a.category + "  target=" + $a.target) -Level "error"
+        Write-Log ("        Invariant: " + $codeTag + "  (" + (Get-Check10InvariantDescription -Code $codeTag) + ")") -Level "error"
         Write-Log ("        Path  : " + $a.regPath) -Level "error"
         if ($a.items.Count -gt 0) {
             Write-Log ("        Items : " + ($a.items -join ', ')) -Level "error"
@@ -93,7 +97,24 @@ function Write-Check10MissActionSummary {
     Write-Log "" -Level "info"
     Write-Log "  One-shot fix for ALL of the above:" -Level "warn"
     Write-Log ("      " + $ScriptInvocationHint) -Level "warn"
+    Write-Log "" -Level "info"
+    Write-Log "  Invariant code legend:" -Level "warn"
+    Write-Log "      INSTALL-STATE   missing key, wrong (Default) label, missing Icon, or unresolvable exe in \command" -Level "warn"
+    Write-Log "      I1-FILE-TARGET  HKCR\*\shell\<Name> still present (menu would appear on individual files)" -Level "warn"
+    Write-Log "      I2-SUPPRESSION  ProgrammaticAccessOnly / AppliesTo / NoWorkingDirectory / LegacyDisable / CommandFlags set" -Level "warn"
+    Write-Log "      I3-LEGACY-DUP   duplicate sibling key from a prior install (sweeps allow-listed legacyNames only)" -Level "warn"
     Write-Log "================================================================================" -Level "warn"
+}
+
+function Get-Check10InvariantDescription {
+    param([string]$Code)
+    switch ($Code) {
+        'I1-FILE-TARGET' { return 'file-target key still present' }
+        'I2-SUPPRESSION' { return 'forbidden value name(s) on directory/background' }
+        'I3-LEGACY-DUP'  { return 'legacy duplicate sibling key(s) under shell parent' }
+        'INSTALL-STATE'  { return 'install-state mismatch (key/label/icon/command)' }
+        default          { return 'unspecified' }
+    }
 }
 
 function Get-HkcrSubPath10 {
@@ -272,7 +293,8 @@ function Invoke-Script10MenuCheck {
                 Add-Check10MissAction -Edition $edName -Category 'install' -Target $targetName `
                     -RegPath $regExe -Items $items `
                     -Reason ($bullets -join '; ') `
-                    -FixHint (".\run.ps1 repair -Edition " + $edName)
+                    -FixHint (".\run.ps1 repair -Edition " + $edName) `
+                    -InvariantCode 'INSTALL-STATE'
             }
             if ($st.verdict -eq 'PASS') { $totalPass++ } else { $totalMiss++ }
         }
@@ -373,14 +395,16 @@ function Invoke-Script10RepairInvariantCheck {
                 Write-Log ("  [PASS] file-target absent: " + $fileRegExe) -Level "success"
                 $passes++
             } else {
-                Write-Log  "  [MISS] file-target STILL PRESENT" -Level "error"
+                Write-Log ("  [MISS] [I1-FILE-TARGET] file-target STILL PRESENT  ->  " + $fileRegExe) -Level "error"
                 Write-Log ("           Path  : " + $fileRegExe) -Level "error"
+                Write-Log  "           Invariant: I1-FILE-TARGET  (file-target key still present)" -Level "error"
                 Write-Log  "           Why   : right-clicking individual files shows the menu (should be folders only)" -Level "error"
                 Write-Log ("           Fix   : .\run.ps1 repair -Edition " + $edName) -Level "warn"
                 Add-Check10MissAction -Edition $edName -Category 'invariant' -Target 'file' `
                     -RegPath $fileRegExe -Items @($fileRegExe) `
                     -Reason "file-target key still present (menu appears on files)" `
-                    -FixHint (".\run.ps1 repair -Edition " + $edName)
+                    -FixHint (".\run.ps1 repair -Edition " + $edName) `
+                    -InvariantCode 'I1-FILE-TARGET'
                 $misses++
             }
         }
@@ -406,8 +430,9 @@ function Invoke-Script10RepairInvariantCheck {
                 Write-Log ("  [PASS] no suppression values on " + $keep + ": " + $regExe) -Level "success"
                 $passes++
             } else {
-                Write-Log ("  [MISS] suppression values on " + $keep) -Level "error"
+                Write-Log ("  [MISS] [I2-SUPPRESSION] forbidden value(s) on " + $keep + " -> " + ($found -join ', ') + "   at  " + $regExe) -Level "error"
                 Write-Log ("           Path  : " + $regExe) -Level "error"
+                Write-Log  "           Invariant: I2-SUPPRESSION  (forbidden value name(s) on directory/background)" -Level "error"
                 Write-Log  "           Values:" -Level "error"
                 foreach ($vName in $found) {
                     Write-Log ("                    - " + $vName) -Level "error"
@@ -417,7 +442,8 @@ function Invoke-Script10RepairInvariantCheck {
                 Add-Check10MissAction -Edition $edName -Category 'invariant' -Target $keep `
                     -RegPath $regExe -Items $found `
                     -Reason ("suppression values present on " + $keep + ": " + ($found -join ', ')) `
-                    -FixHint (".\run.ps1 repair -Edition " + $edName)
+                    -FixHint (".\run.ps1 repair -Edition " + $edName) `
+                    -InvariantCode 'I2-SUPPRESSION'
                 $misses++
             }
         }
@@ -448,8 +474,9 @@ function Invoke-Script10RepairInvariantCheck {
                 Write-Log ("  [PASS] no legacy duplicates under " + $parentExe) -Level "success"
                 $passes++
             } else {
-                Write-Log ("  [MISS] legacy duplicate child key(s) under " + $parentExe) -Level "error"
+                Write-Log ("  [MISS] [I3-LEGACY-DUP] " + $present.Count + " legacy duplicate child key(s) -> " + ($present -join ', ') + "   under  " + $parentExe) -Level "error"
                 Write-Log ("           Path  : " + $parentExe) -Level "error"
+                Write-Log  "           Invariant: I3-LEGACY-DUP  (legacy duplicate sibling key(s) under shell parent)" -Level "error"
                 Write-Log  "           Children:" -Level "error"
                 foreach ($cName in $present) {
                     Write-Log ("                    - " + $parentExe + "\" + $cName) -Level "error"
@@ -459,7 +486,8 @@ function Invoke-Script10RepairInvariantCheck {
                 Add-Check10MissAction -Edition $edName -Category 'invariant' -Target ('legacy:' + $assocTarget) `
                     -RegPath $parentExe -Items $present `
                     -Reason ("legacy duplicate child keys under " + $parentExe + ": " + ($present -join ', ')) `
-                    -FixHint (".\run.ps1 repair -Edition " + $edName)
+                    -FixHint (".\run.ps1 repair -Edition " + $edName) `
+                    -InvariantCode 'I3-LEGACY-DUP'
                 $misses++
             }
         }
