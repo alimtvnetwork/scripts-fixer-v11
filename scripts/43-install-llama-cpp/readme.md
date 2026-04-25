@@ -32,6 +32,31 @@ Implementation folder for **Script 43 — Install Llama Cpp**. The full design c
 .\run.ps1 -I 43 install
 ```
 
+## Catalog SHA256 status
+
+The model catalog ships with **64 of 90** entries pre-populated with
+SHA256 checksums sourced from HuggingFace's `X-Linked-Etag` header.
+The remaining 26 entries are annotated with a `manualReason` field
+because their download URLs are unreachable for one of two reasons:
+
+| Reason | Count | What to do |
+|---|---|---|
+| Gated repo (HTTP 401) | 11 | Run `huggingface-cli login`, then populate `sha256` manually after a successful download. |
+| URL not found (HTTP 404) | 15 | Catalog entry is stale or was a hallucinated future model — verify `huggingfacePage` and update `downloadUrl`, then re-run `fill-sha256`. |
+
+Refresh the catalog at any time:
+
+```powershell
+.\run.ps1 -I 43 fill-sha256                    # all empty entries
+.\run.ps1 -I 43 fill-sha256 -- -Ids qwen3-4b   # one entry only
+```
+
+At install time, every entry with a populated `sha256` is verified
+via `Get-FileHash` after download. Entries missing a checksum log a
+`[NO-CHECKSUM]` warning along with the `manualReason` (if any). Set
+`config.download.requireChecksum = true` to fail the install for
+any model lacking a checksum instead of warning.
+
 ## Layout
 
 | File | Purpose |
