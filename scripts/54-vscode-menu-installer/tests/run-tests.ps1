@@ -27,6 +27,19 @@
 #    0 -- all green
 #    1 -- at least one assertion failed
 #    2 -- pre-flight failed (config missing, no enabled editions, etc.)
+#
+#  CI-friendly granular exit codes (only when -ExitCodeMap is passed):
+#    0  -- all green
+#    2  -- pre-flight failed
+#    10 -- install-state failures only (Cases 1-5)
+#    20 -- invariant: file-target key STILL PRESENT     (Case 6)
+#    21 -- invariant: suppression values PRESENT        (Case 7)
+#    22 -- invariant: legacy duplicates PRESENT         (Case 8)
+#    30 -- multiple invariant categories failed (any 2+ of 20/21/22)
+#    40 -- mix of install-state + invariant failures
+#
+#  Without -ExitCodeMap, the default 0/1/2 contract is preserved so existing
+#  CI does not break.
 # --------------------------------------------------------------------------
 [CmdletBinding()]
 param(
@@ -34,7 +47,8 @@ param(
     [string[]] $OnlyTargets  = @(),                     # subset of file/directory/background
     [int[]]    $OnlyCases    = @(),                     # subset of case numbers
     [switch]   $NoColor,
-    [switch]   $SkipRepairInvariants                    # opt out of Cases 6/7/8
+    [switch]   $SkipRepairInvariants,                   # opt out of Cases 6/7/8
+    [switch]   $ExitCodeMap                             # opt-in to granular exit codes
 )
 
 Set-StrictMode -Version Latest
@@ -378,7 +392,39 @@ if ($script:failN -gt 0) {
         Write-C ("  [Case {0}] {1}" -f $_.Case, $_.Name) "Red"
         if ($_.Detail) { Write-C ("            {0}" -f $_.Detail) "DarkGray" }
     }
-    exit 1
+    if (-not $ExitCodeMap) { exit 1 }
+
+    # Granular CI-friendly exit code mapping. Group failures by case range:
+    #   Cases 1-5  = install-state
+    #   Case  6    = file-target present     -> 20
+    #   Case  7    = suppression values      -> 21
+    #   Case  8    = legacy duplicates       -> 22
+    $failedCases = @($script:results | Where-Object Status -eq "FAIL" | ForEach-Object { $_.Case } | Sort-Object -Unique)
+    $hasInstall = $false
+    $invariantBuckets = @()
+    foreach ($c in $failedCases) {
+        if ($c -ge 1 -and $c -le 5) { $hasInstall = $true; continue }
+        switch ($c) {
+            6 { $invariantBuckets += 20 }
+            7 { $invariantBuckets += 21 }
+            8 { $invariantBuckets += 22 }
+        }
+    }
+    $invariantBuckets = @($invariantBuckets | Sort-Object -Unique)
+    $hasInvariant    = $invariantBuckets.Count -gt 0
+    $isMixed         = $hasInstall -and $hasInvariant
+    $isMultiInvariant = (-not $hasInstall) -and ($invariantBuckets.Count -ge 2)
+
+    $code = 1
+    if ($isMixed)              { $code = 40 }
+    elseif ($isMultiInvariant) { $code = 30 }
+    elseif ($hasInvariant)     { $code = $invariantBuckets[0] }
+    elseif ($hasInstall)       { $code = 10 }
+
+    Write-C ""
+    Write-C ("CI exit code (ExitCodeMap=on): " + $code) "Yellow"
+    Write-C "  Legend: 10=install-state, 20=file-target, 21=suppression, 22=legacy, 30=multi-invariant, 40=mixed" "DarkGray"
+    exit $code
 }
 
 Write-C "All cases passed." "Green"

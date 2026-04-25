@@ -107,7 +107,41 @@ switch ($Command.ToLower()) {
         Write-Log "" -Level "info"
         Write-Log ("Combined check totals: PASS=" + $totalPass + ", MISS=" + $totalMiss) -Level $(if ($totalMiss -eq 0) { 'success' } else { 'error' })
         $hasMisses = $totalMiss -gt 0
-        if ($hasMisses) { exit 1 } else { exit 0 }
+        # CI-friendly granular exit codes (opt-in via -ExitCodeMap in $Rest).
+        # Default contract is preserved: 0 = green, 1 = any miss.
+        $useExitCodeMap = ($Rest -contains '-ExitCodeMap') -or ($Rest -contains '--exit-code-map')
+        if (-not $hasMisses) { exit 0 }
+        if (-not $useExitCodeMap) { exit 1 }
+
+        # Map: 10 = install-state, 20 = file-target present, 21 = suppression,
+        #      22 = legacy, 30 = multi-invariant, 40 = mixed.
+        $hasInstall = $result.totalMiss -gt 0
+        $invariantBuckets = @()
+        foreach ($ed in $repairResult.editions) {
+            foreach ($d in $ed.details) {
+                if ($d.ok) { continue }
+                switch ($d.invariant) {
+                    'file-absent'    { $invariantBuckets += 20 }
+                    'no-suppression' { $invariantBuckets += 21 }
+                    'no-legacy'      { $invariantBuckets += 22 }
+                }
+            }
+        }
+        $invariantBuckets = @($invariantBuckets | Sort-Object -Unique)
+        $hasInvariant     = $invariantBuckets.Count -gt 0
+        $isMixed          = $hasInstall -and $hasInvariant
+        $isMultiInvariant = (-not $hasInstall) -and ($invariantBuckets.Count -ge 2)
+
+        $code = 1
+        if ($isMixed)              { $code = 40 }
+        elseif ($isMultiInvariant) { $code = 30 }
+        elseif ($hasInvariant)     { $code = $invariantBuckets[0] }
+        elseif ($hasInstall)       { $code = 10 }
+
+        Write-Log "" -Level "info"
+        Write-Log ("CI exit code (ExitCodeMap=on): " + $code) -Level "warn"
+        Write-Log "  Legend: 10=install-state, 20=file-target, 21=suppression, 22=legacy, 30=multi-invariant, 40=mixed" -Level "info"
+        exit $code
     }
     "verify" {
         $harness = Join-Path $scriptDir "tests\run-tests.ps1"
