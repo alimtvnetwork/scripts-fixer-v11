@@ -141,6 +141,52 @@ individual files). When to pass `-SkipRepairInvariants`: short-circuit a CI
 run after a known-clean install while the underlying registry hasn't been
 repaired yet.
 
+#### CI-friendly granular exit codes (`-ExitCodeMap`)
+
+Both `check` and `verify` accept an opt-in `-ExitCodeMap` switch that maps
+specific failure types to distinct exit codes so CI can branch on the cause
+without parsing logs. **Default behavior is unchanged** (0 = green, 1 = any
+miss, 2 = pre-flight) so existing pipelines do not break.
+
+| Code | Meaning |
+|---|---|
+| **0**  | All green |
+| **2**  | Pre-flight failed (config missing, no enabled editions, etc.) — `verify` only |
+| **10** | Only **install-state** failures (Cases 1–5: missing leaf, wrong label, broken `\command`, exe not on disk, etc.) |
+| **20** | Only invariant **#1**: file-target key (`HKCR\*\shell\<Name>`) is **STILL PRESENT** |
+| **21** | Only invariant **#2**: **suppression values** present on `directory` / `background` (`ProgrammaticAccessOnly`, `AppliesTo`, `NoWorkingDirectory`, `LegacyDisable`, `CommandFlags`) |
+| **22** | Only invariant **#3**: **legacy duplicate** child keys present (allow-list in `config.repair.legacyNames`) |
+| **30** | **Multiple invariant categories** failed (any 2+ of 20/21/22) — registry needs broader cleanup |
+| **40** | **Mixed**: install-state failures **and** invariant failures — re-install then repair |
+| **1**  | Catch-all fallback (only if the failure can't be classified — should not occur in practice) |
+
+Usage:
+
+```powershell
+.\run.ps1 -I 54 check  -ExitCodeMap   # opt-in for the check verb
+.\run.ps1 -I 54 verify -ExitCodeMap   # opt-in for the test harness
+```
+
+Sample CI branching (Bash on a Windows runner):
+
+```bash
+pwsh -File ./run.ps1 -I 54 check -ExitCodeMap
+case $? in
+  0)              echo "OK" ;;
+  10)             echo "Install state broken -> run: .\run.ps1 -I 54 install"  ; exit 1 ;;
+  20|21|22|30)    echo "Repair invariant violated -> run: .\run.ps1 -I 54 repair" ; exit 1 ;;
+  40)             echo "Both install + invariants broken -> install then repair"  ; exit 1 ;;
+  *)              echo "Unexpected: $?"                                         ; exit 1 ;;
+esac
+```
+
+The grouping rules: if there is at least one install-state failure **and**
+any invariant failure, the code is **40** (mixed) — not the most-specific
+invariant code. If there are **no** install-state failures but **two or
+more** invariant categories fail, the code is **30** (multi-invariant). A
+single invariant category failing in isolation collapses to its own code
+(20/21/22), which is what CI usually wants to grep on.
+
 ## Audit log
 
 Every install and uninstall run writes a timestamped audit file to
