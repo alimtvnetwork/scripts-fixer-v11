@@ -97,15 +97,37 @@ stable JSON document you can pipe into `jq`, scripts, or CI:
   "tag": "lovable-startup",
   "count": 2,
   "entries": [
-    { "method": "autostart",    "name": "demo",   "path": "/home/u/.config/autostart/lovable-startup-demo.desktop", "scope": "user" },
-    { "method": "shell-rc-env", "name": "EDITOR", "path": "/home/u/.bashrc",                                          "scope": "user" }
+    { "method": "autostart",    "name": "demo",   "path": "/home/u/.config/autostart/lovable-startup-demo.desktop", "status": "active",   "scope": "user" },
+    { "method": "shell-rc-env", "name": "EDITOR", "path": "/home/u/.bashrc",                                          "status": "active",   "scope": "user" }
   ]
 }
 ```
 
 Schema is stable: `tag` (string), `count` (number), `entries[]` of
-`{method, name, path, scope}` strings. Empty list returns
-`{"tag":"...","count":0,"entries":[]}` with exit 0.
+`{method, name, path, status, scope}` strings. `status` is `"active"` when
+the underlying file exists on disk, `"orphaned"` otherwise. Empty list
+returns `{"tag":"...","count":0,"entries":[]}` with exit 0.
+
+### CSV export
+
+Pass `--csv` (or `--format=csv`) for an RFC 4180 CSV stream with the same
+columns: `method,name,path,status,scope`.
+
+```bash
+./run.sh -I 64 -- list --csv | column -t -s,
+```
+
+### Writing to a file
+
+Use `--output FILE` (alias `-o`) to redirect any format — `table`, `json`, or
+`csv` — straight to disk. Parent directories are created if missing, and the
+command fails fast with a clear error if the path is not writable.
+
+```bash
+./run.sh -I 64 -- list --json --output ~/reports/startup.json
+./run.sh -I 64 -- list --csv  --output ~/reports/startup.csv --method autostart
+./run.sh -I 64 -- list        --output ~/reports/startup.txt   # table to file
+```
 
 ### Filtering by method
 
