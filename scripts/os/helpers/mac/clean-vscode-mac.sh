@@ -134,11 +134,14 @@ then
 fi
 
 # ---- logging helpers -------------------------------------------------------
-log_info()    { [[ "$verbosity" != "quiet" ]] && echo "[INFO] $*"; }
-log_debug()   { [[ "$verbosity" == "debug"  ]] && echo "[DEBUG] $*"; }
+# All log levels write to stderr so the planners' stdout (which is parsed
+# into the plan array via `mapfile`) stays free of log lines. Only the
+# planners themselves echo target paths to stdout.
+log_info()    { [[ "$verbosity" != "quiet" ]] && echo "[INFO] $*" >&2; }
+log_debug()   { [[ "$verbosity" == "debug"  ]] && echo "[DEBUG] $*" >&2; }
 log_warn()    { echo "[WARN] $*" >&2; }
 log_err()     { echo "[FAIL] $*" >&2; }
-log_ok()      { [[ "$verbosity" != "quiet" ]] && echo "[ OK ] $*"; }
+log_ok()      { [[ "$verbosity" != "quiet" ]] && echo "[ OK ] $*" >&2; }
 
 audit_event() {
     # audit_event <op> <surface> <target> [reason]
