@@ -499,11 +499,17 @@ Write-ResidueReport -Rows $script:residueRows
 # CI job (or a follow-up script) can parse the same data without screen-
 # scraping. CODE-RED on any write failure: log the exact target path.
 if (-not [string]::IsNullOrWhiteSpace($ReportPath)) {
-    # Plain hashtables -- ConvertTo-Json serialises them as JSON objects.
-    # We avoid [ordered]@{} / [pscustomobject]@{} casts here because
-    # PowerShell rejects nested casts of pre-built ordered/PSObject values
-    # ("Argument types do not match") at runtime. Property order in JSON
-    # is irrelevant to consumers anyway -- they parse by name.
+    # Build the report document with plain hashtables. Two PowerShell
+    # quirks shape the code here:
+    #   1. Nested [ordered]@{} or [pscustomobject]@{} casts that contain
+    #      pre-built PSObject/Ordered values fail at runtime with
+    #      "Argument types do not match". Plain @{} avoids that. Property
+    #      order in JSON is irrelevant to consumers (they parse by name).
+    #   2. `@($genericList)` over a System.Collections.Generic.List[object]
+    #      *also* trips the same "Argument types do not match" error in
+    #      pwsh 7.5+ when the list contains [pscustomobject] items. Use
+    #      `.ToArray()` to materialise a plain object[] instead.
+    $residueArray = $script:residueRows.ToArray()
     $scopeStatusObj = @{
         CurrentUser = @{} + $script:scopeStatus.CurrentUser
         AllUsers    = @{} + $script:scopeStatus.AllUsers
@@ -522,7 +528,7 @@ if (-not [string]::IsNullOrWhiteSpace($ReportPath)) {
         editions    = @($editionsToTest)
         scopes      = @($scopesPlanned)
         scopeStatus = $scopeStatusObj
-        residueRows = @($script:residueRows)
+        residueRows = $residueArray
         totals      = $totalsObj
     }
     try {
