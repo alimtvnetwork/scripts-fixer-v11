@@ -1,5 +1,6 @@
 {
   "version": "0.132.0",
+  "_changelog_0_133_0": "64-startup-add: list now supports --method to filter by registration type",
   "description": "Linux installer registry. Mirrors Windows numbering. Windows-only scripts intentionally absent.",
   "scripts": [
     {
