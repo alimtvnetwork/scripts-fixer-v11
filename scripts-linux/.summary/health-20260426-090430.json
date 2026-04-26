@@ -1,0 +1,7 @@
+{
+  "timestamp": "20260426-090430",
+  "summary": {"ok":1,"drift":1,"broken":6,"uninstalled":28,"missing_script":0},
+  "results": [
+    {"id":"01","folder":"01-install-vscode","state":"drift","markerAgeSeconds":2,"detail":"marker present but verify FAILED — likely broken/removed externally"},
+    {"id":"03","folder":"03-install-nodejs","state":"broken","markerAgeSeconds":null,"detail":"verify OK but no install marker — installed out-of-band"},
+    {"id":"04","folder":"04-install-pnpm","state":"uninstalled","markerAgeSeconds":null,"detail":"not installed (clean)"},
