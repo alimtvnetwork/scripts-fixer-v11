@@ -21,6 +21,7 @@ export SCRIPT_ID="66"
 . "$ROOT/_shared/logger.sh"
 . "$ROOT/_shared/file-error.sh"
 . "$ROOT/_shared/confirm.sh"
+. "$ROOT/_shared/verify.sh"
 . "$SCRIPT_DIR/helpers/match.sh"
 . "$SCRIPT_DIR/helpers/sweep.sh"
 
@@ -31,6 +32,7 @@ TS="$(date +%Y%m%d-%H%M%S)"
 RUN_DIR="$LOGS_ROOT/$TS"
 ROWS_TSV="$RUN_DIR/rows.tsv"
 PLAN_TSV="$RUN_DIR/plan.tsv"
+VERIFY_TSV="$RUN_DIR/verify.tsv"
 export ROWS_TSV
 
 # --------------------------------------------------------------------- args
