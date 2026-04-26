@@ -70,7 +70,21 @@ elif expr.startswith('.categories.'):
     # strip array-iter suffix '[]' if present
     is_iter = rest.endswith('[]')
     if is_iter: rest = rest[:-2]
-    parts = rest.split('.')
+    # Honor double-quoted segments so '.\"caches-user\".mode' parses to
+    # ['caches-user', 'mode'] instead of being split on the hyphen-free
+    # boundaries (jq quotes hyphenated ids; we mirror that here).
+    parts = []
+    buf = ''
+    in_q = False
+    for ch in rest:
+        if ch == '\"':
+            in_q = not in_q
+        elif ch == '.' and not in_q:
+            if buf != '': parts.append(buf)
+            buf = ''
+        else:
+            buf += ch
+    if buf != '': parts.append(buf)
     node = get(d.get('categories') or {}, parts)
     if node is None: pass
     elif is_iter and isinstance(node, list):
