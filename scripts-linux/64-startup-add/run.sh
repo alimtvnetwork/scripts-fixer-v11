@@ -880,11 +880,13 @@ else:  # table
     print("-" * 60)
     for g in groups:
         label = "name" if g["kind"] == "by-name" else "content sha256"
-        print(f"\n[{g[\"kind\"]}] {label} = {g[\"key\"]}  ({g[\"count\"]} entries)")
+        kind = g["kind"]; key = g["key"]; cnt = g["count"]
+        print("\n[%s] %s = %s  (%d entries)" % (kind, label, key, cnt))
         for e in g["entries"]:
-            print(f"  - {e[\"method\"]:<14} {e[\"name\"]:<20} {e[\"path\"]}")
+            print("  - %-14s %-20s %s" % (e["method"], e["name"], e["path"]))
     print("")
-    print(f"summary: {len(name_groups)} by-name group(s), {len(hash_groups)} by-content group(s).")
+    print("summary: %d by-name group(s), %d by-content group(s)." %
+          (len(name_groups), len(hash_groups)))
 ' "$fmt" "$tag"
 }
 
