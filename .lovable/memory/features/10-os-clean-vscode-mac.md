@@ -58,4 +58,38 @@ per action + `session-end` with `removed=N failed=N`.
 Every file/path error includes the EXACT path AND the failure reason
 (errno text or the failing command's stderr).
 
-Built: v0.133.0.
+### Ownership detection (v0.134.0)
+No candidate is added to the plan unless an ownership probe passes.
+Verifiers (in `clean-vscode-mac.sh`):
+- `verify_workflow`: reads `Contents/Info.plist` `CFBundleIdentifier` via
+  `/usr/libexec/PlistBuddy`; accepts `com.microsoft.VSCode*` or any id
+  containing `vscode`/`microsoft.code`. Fallback: greps
+  `Contents/document.wflow` for `Visual Studio Code.app` /
+  `com.microsoft.VSCode`. Filename-only matches are REJECTED.
+- `verify_code_cli`: resolves the symlink with `python3 os.path.realpath`
+  (macOS `readlink` lacks `-f`); accepts only when the resolved target is
+  inside `Visual Studio Code.app/Contents/Resources/app/bin/code` (or a
+  `Code.app` / `VSCode` variant). Broken links: accept only when the
+  dangling target string still references VS Code. Regular files: accept
+  only when first 4 KB contains `Visual Studio Code` /
+  `com.microsoft.VSCode` / `VSCODE_`.
+- `verify_code_app`: requires `CFBundleIdentifier` to match
+  `com.microsoft.VSCode*` (incl. Insiders, Exploration).
+- `verify_launch_agent`: requires `Label`, `Program`, or
+  `ProgramArguments[0]` to reference `com.microsoft.VSCode` or a
+  `Visual Studio Code.app` path.
+- Login items: AppleScript filter requires path to contain
+  `Visual Studio Code.app` / `Visual Studio Code - Insiders.app`;
+  non-matches logged at debug level.
+
+Rejections always log `[WARN] Skip <path> (failure: <reason>)` with the
+EXACT path and the EXACT signal that failed (e.g. `CFBundleIdentifier='com.acme.Other'`).
+
+All log helpers write to **stderr** so the planners' stdout (parsed by
+`mapfile` into the plan array) stays free of log lines.
+
+There is intentionally **no `--no-verify` escape hatch** -- the whole
+point of detection is that the user asked for a tool that will not
+delete unrelated items.
+
+Built: v0.134.0.
