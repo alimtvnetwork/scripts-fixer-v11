@@ -24,6 +24,7 @@ OneNote install (`onenote` keyword) must do ONLY OneNote. OneDrive disable lives
 - [Questionnaire](mem://features/questionnaire) — Questionnaire system for script 12
 - [Resolved folder](mem://features/resolved-folder) — .resolved/ runtime state persistence
 - [Shared helpers](mem://features/shared-helpers) — Shared PowerShell helper modules
+- [ZSH validation](mem://features/zsh-validation) — Script 60 `validate` verb: ~17 checks (paths, theme, markers); auto-runs after install + repair
 - [ZSH theme switcher](mem://features/zsh-theme-switcher) — Script 61: wires `zsh-theme` command into ~/.zshrc with interactive menu + flag mode
 - [ZSH installer](mem://features/zsh-installer) — Script 60: installs zsh + Oh-My-Zsh, deploys curated zshrc payloads between markers, auto-backs up existing config
 - [Models catalog](mem://features/models-catalog) — 90 GGUF models incl. OpenRouter leaderboard open-weight portion (Nov 2025)

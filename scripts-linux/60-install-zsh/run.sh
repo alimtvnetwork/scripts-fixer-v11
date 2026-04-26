@@ -171,6 +171,162 @@ verify_theme() {
   log_warn "[60] Configured theme '$DEFAULT_THEME' not found at $theme_file (OMZ may bundle it under a different name)"
 }
 
+# ---------- validation ----------
+# Each check pushes a "PASS|FAIL|WARN<TAB>label<TAB>detail" row into VAL_ROWS.
+# Returns 0 if there are zero FAIL rows, 1 otherwise. WARN rows never fail.
+VAL_ROWS=()
+VAL_FAIL=0
+VAL_WARN=0
+
+_val_add() {
+  # $1 = PASS|FAIL|WARN  $2 = label  $3 = detail
+  VAL_ROWS+=("$1"$'\t'"$2"$'\t'"$3")
+  case "$1" in
+    FAIL) VAL_FAIL=$((VAL_FAIL+1)) ;;
+    WARN) VAL_WARN=$((VAL_WARN+1)) ;;
+  esac
+}
+
+_val_check_file() { # label, path
+  if [ -f "$2" ]; then _val_add PASS "$1" "$2"; else _val_add FAIL "$1" "$2 missing"; fi
+}
+_val_check_dir()  { # label, path
+  if [ -d "$2" ]; then _val_add PASS "$1" "$2"; else _val_add FAIL "$1" "$2 missing"; fi
+}
+_val_check_grep() { # label, pattern, file, [warn|fail]
+  local sev="${4:-FAIL}"
+  if [ ! -f "$3" ]; then _val_add "$sev" "$1" "$3 missing (cannot grep)"; return; fi
+  if grep -qE -- "$2" "$3"; then _val_add PASS "$1" "found in $3"
+  else _val_add "$sev" "$1" "pattern not found in $3: $2"
+  fi
+}
+
+validate_zshrc() {
+  VAL_ROWS=(); VAL_FAIL=0; VAL_WARN=0
+
+  # 1. zsh binary
+  if command -v zsh >/dev/null 2>&1; then
+    _val_add PASS "zsh in PATH" "$(command -v zsh)"
+  else
+    _val_add FAIL "zsh in PATH" "zsh binary not found"
+  fi
+
+  # 2. Oh-My-Zsh paths
+  _val_check_dir  "OMZ root"        "$OMZ_DIR"
+  _val_check_file "OMZ entrypoint"  "$OMZ_DIR/oh-my-zsh.sh"
+  _val_check_dir  "OMZ themes dir"  "$OMZ_DIR/themes"
+  _val_check_dir  "OMZ custom dir"  "$OMZ_DIR/custom"
+  _val_check_dir  "OMZ plugins dir" "$OMZ_DIR/plugins"
+
+  # 3. ~/.zshrc + structural lines
+  _val_check_file "~/.zshrc deployed" "$ZSHRC"
+  _val_check_grep "export ZSH= line"        '^export ZSH='        "$ZSHRC"
+  _val_check_grep "ZSH_THEME= line"         '^ZSH_THEME='         "$ZSHRC"
+  _val_check_grep "plugins=(...) line"      '^plugins=\('         "$ZSHRC"
+  _val_check_grep "source oh-my-zsh.sh"     'source[[:space:]]+\$ZSH/oh-my-zsh\.sh' "$ZSHRC"
+
+  # 4. Configured default theme actually exists (built-in or under custom/themes)
+  local theme_builtin="$OMZ_DIR/themes/${DEFAULT_THEME}.zsh-theme"
+  local theme_custom="$OMZ_DIR/custom/themes/${DEFAULT_THEME}.zsh-theme"
+  if [ -f "$theme_builtin" ]; then
+    _val_add PASS "theme '$DEFAULT_THEME' resolvable" "$theme_builtin"
+  elif [ -f "$theme_custom" ]; then
+    _val_add PASS "theme '$DEFAULT_THEME' resolvable" "$theme_custom (custom)"
+  else
+    _val_add WARN "theme '$DEFAULT_THEME' resolvable" "not found in themes/ or custom/themes/"
+  fi
+
+  # 5. Theme actually wired in ~/.zshrc matches default_theme
+  if [ -f "$ZSHRC" ]; then
+    local active_theme
+    active_theme=$(grep -E '^ZSH_THEME=' "$ZSHRC" | head -n1 | sed -E 's/^ZSH_THEME="?([^"]*)"?.*/\1/')
+    if [ -z "$active_theme" ]; then
+      _val_add WARN "active ZSH_THEME wired"  "no ZSH_THEME value parsed"
+    elif [ "$active_theme" = "$DEFAULT_THEME" ]; then
+      _val_add PASS "active ZSH_THEME wired"  "$active_theme"
+    else
+      _val_add WARN "active ZSH_THEME wired"  "expected '$DEFAULT_THEME', got '$active_theme'"
+    fi
+  fi
+
+  # 6. Custom plugins from config.json:custom_plugins[]
+  local n; n=$(jq -r '.custom_plugins | length' "$CONFIG" 2>/dev/null || echo 0)
+  if [ "$n" -gt 0 ] 2>/dev/null; then
+    local i name dest dest_resolved
+    for i in $(seq 0 $((n-1))); do
+      name=$(jq -r ".custom_plugins[$i].name" "$CONFIG")
+      dest=$(jq -r ".custom_plugins[$i].dest" "$CONFIG")
+      dest_resolved=$(eval echo "$dest")
+      if [ -d "$dest_resolved" ]; then
+        _val_add PASS "custom plugin '$name'" "$dest_resolved"
+      else
+        _val_add FAIL "custom plugin '$name'" "$dest_resolved missing"
+      fi
+    done
+  fi
+
+  # 7. Plugin names declared in plugins=(...) inside ~/.zshrc actually exist on disk
+  if [ -f "$ZSHRC" ]; then
+    local plugin_line
+    plugin_line=$(grep -E '^plugins=\(' "$ZSHRC" | head -n1)
+    if [ -n "$plugin_line" ]; then
+      local body; body=$(echo "$plugin_line" | sed -E 's/^plugins=\(([^)]*)\).*/\1/')
+      local p
+      for p in $body; do
+        [ -z "$p" ] && continue
+        if [ -d "$OMZ_DIR/plugins/$p" ] || [ -d "$OMZ_DIR/custom/plugins/$p" ]; then
+          _val_add PASS "plugin '$p' resolvable" "found"
+        else
+          _val_add WARN "plugin '$p' resolvable" "not in plugins/ or custom/plugins/"
+        fi
+      done
+    fi
+  fi
+
+  # 8. Extras markers (only if deploy_extras=true)
+  if [ "$DO_DEPLOY_EXTRAS" = "true" ] && [ -f "$ZSHRC" ]; then
+    local has_begin=0 has_end=0
+    grep -Fq "$EXTRAS_MARKER_BEGIN" "$ZSHRC" && has_begin=1
+    grep -Fq "$EXTRAS_MARKER_END"   "$ZSHRC" && has_end=1
+    if [ "$has_begin" = "1" ] && [ "$has_end" = "1" ]; then
+      # Verify ordering: BEGIN must come before END
+      local ln_begin ln_end
+      ln_begin=$(grep -nF "$EXTRAS_MARKER_BEGIN" "$ZSHRC" | head -n1 | cut -d: -f1)
+      ln_end=$(  grep -nF "$EXTRAS_MARKER_END"   "$ZSHRC" | head -n1 | cut -d: -f1)
+      if [ "$ln_begin" -lt "$ln_end" ]; then
+        _val_add PASS "extras markers" "BEGIN line $ln_begin < END line $ln_end"
+      else
+        _val_add FAIL "extras markers" "BEGIN line $ln_begin not before END line $ln_end"
+      fi
+    else
+      _val_add FAIL "extras markers" "BEGIN=$has_begin END=$has_end (both must be 1)"
+    fi
+  fi
+
+  # 9. Render report
+  local total=${#VAL_ROWS[@]}
+  local pass_n=$(( total - VAL_FAIL - VAL_WARN ))
+  log_info "[60] === zshrc validation report ($total checks: $pass_n PASS / $VAL_WARN WARN / $VAL_FAIL FAIL) ==="
+  local row sev label detail
+  for row in "${VAL_ROWS[@]}"; do
+    sev="${row%%$'\t'*}"; rest="${row#*$'\t'}"
+    label="${rest%%$'\t'*}"; detail="${rest#*$'\t'}"
+    case "$sev" in
+      PASS) log_ok   "[60] [PASS] $label -- $detail" ;;
+      WARN) log_warn "[60] [WARN] $label -- $detail" ;;
+      FAIL) log_err  "[60] [FAIL] $label -- $detail" ;;
+    esac
+  done
+  log_info "[60] === end of validation ==="
+
+  if [ "$VAL_FAIL" -gt 0 ]; then
+    log_err "[60] zshrc validation FAILED ($VAL_FAIL hard errors). Run '60 repair' to redeploy."
+    return 1
+  fi
+  log_ok "[60] zshrc validation OK ($pass_n checks passed${VAL_WARN:+, $VAL_WARN warnings})"
+  return 0
+}
+
 maybe_chsh() {
   if [ "$DO_CHSH" != "true" ]; then
     log_info "[60] chsh skipped (set_default_shell=false in config.json)"
@@ -191,6 +347,7 @@ verb_install() {
 
   if verify_installed && [ -f "$INSTALLED_MARK" ]; then
     log_ok "[60] Already installed"
+    validate_zshrc || true
     return 0
   fi
 
@@ -204,6 +361,7 @@ verb_install() {
   maybe_chsh
 
   mkdir -p "$ROOT/.installed"; touch "$INSTALLED_MARK"
+  validate_zshrc || log_warn "[60] Install completed but validation flagged issues -- review report above"
   log_ok "[60] Done. Open a new terminal and run 'zsh' (or set as default shell)."
   log_info "[60] Tip: also install script 61 for the 'zsh-theme' switcher command."
   return 0
@@ -231,6 +389,7 @@ verb_repair() {
   deploy_base_zshrc   || return 1
   append_extras_zshrc || return 1
   mkdir -p "$ROOT/.installed"; touch "$INSTALLED_MARK"
+  validate_zshrc || log_warn "[60] Repair completed but validation flagged issues -- review report above"
   log_ok "[60] Repair complete"
 }
 
@@ -245,6 +404,7 @@ case "${1:-install}" in
   install)   verb_install ;;
   check)     verb_check ;;
   repair)    verb_repair ;;
+  validate)  validate_zshrc ;;
   uninstall) verb_uninstall ;;
-  *) log_err "[60] Unknown verb: $1 (expected install|check|repair|uninstall)"; exit 2 ;;
+  *) log_err "[60] Unknown verb: $1 (expected install|check|repair|validate|uninstall)"; exit 2 ;;
 esac
