@@ -67,7 +67,29 @@ while [ $# -gt 0 ]; do
         VERB="vsclin-passthrough"; VSCLIN_SUB="list";   shift; VSCLIN_REST=("$@"); break ;;
     vscode-clean-linux-help|vscode-linux-clean-help)
         VERB="vsclin-passthrough"; VSCLIN_SUB="help";   shift; VSCLIN_REST=("$@"); break ;;
-    *) log_warn "Unknown arg: $1"; shift ;;
+    # ---- top-level shortcuts to script 70 (Ubuntu WordPress installer) ----
+    # `./run.sh install wordpress [args...]`  -> full stack install
+    # `./run.sh install wp [args...]`         -> alias of 'wordpress'
+    # `./run.sh install wp-only [args...]`    -> only the WordPress component
+    # `./run.sh wp [args...]` / `./run.sh wordpress [args...]` -> shortcut without 'install'
+    wp|wordpress)
+        VERB="wp-passthrough"; WP_SUB="install"; WP_COMP=""; shift; WP_REST=("$@"); break ;;
+    wp-only)
+        VERB="wp-passthrough"; WP_SUB="install"; WP_COMP="wp-only"; shift; WP_REST=("$@"); break ;;
+    *)
+        # `./run.sh install wordpress [args]` lands here AFTER install was consumed.
+        # Re-route it through the wp passthrough so the user-friendly form works.
+        if [ "$VERB" = "install" ] && { [ "$1" = "wordpress" ] || [ "$1" = "wp" ] || [ "$1" = "wp-only" ]; }; then
+            comp=""
+            [ "$1" = "wp-only" ] && comp="wp-only"
+            VERB="wp-passthrough"; WP_SUB="install"; WP_COMP="$comp"; shift; WP_REST=("$@"); break
+        fi
+        if [ "$VERB" = "uninstall" ] && { [ "$1" = "wordpress" ] || [ "$1" = "wp" ] || [ "$1" = "wp-only" ]; }; then
+            comp=""
+            [ "$1" = "wp-only" ] && comp="wp-only"
+            VERB="wp-passthrough"; WP_SUB="uninstall"; WP_COMP="$comp"; shift; WP_REST=("$@"); break
+        fi
+        log_warn "Unknown arg: $1"; shift ;;
   esac
 done
 
@@ -130,6 +152,20 @@ Linux VS Code uninstaller (script 67 shortcuts; Linux only):
   vscode-clean-linux-detect    Detect-only: print which install methods are
                                present, no changes
   vscode-clean-linux-list      Print catalog of methods + probes + steps
+
+Ubuntu WordPress installer (script 70 shortcuts; Ubuntu/Debian only):
+  install wordpress            Install full LEMP stack + latest WordPress
+      -i, --interactive        Prompt for port / data dir / PHP version /
+                               install path / DB name / user / password
+      --db mysql|mariadb       Pick DB engine (default: mysql)
+      --php 8.1|8.2|8.3|latest Pin PHP version (default: latest)
+      --port <n>               MySQL port (default: 3306)
+      --datadir <path>         MySQL data directory (default: /var/lib/mysql)
+      --path <path>            WordPress install path (default: /var/www/wordpress)
+      --site-port <n>          nginx HTTP port (default: 80)
+  install wp                   Alias of 'install wordpress'
+  install wp-only              Only the WordPress component (assumes prereqs)
+  uninstall wordpress          Remove WordPress + nginx vhost (keeps PHP / MySQL)
 
 Flags:
   -I <id>              Restrict to a single script id
@@ -276,6 +312,15 @@ case "${VERB:-help}" in
       bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB" "${_vsclin_filtered[@]}"
     else
       bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB"
+    fi
+    ;;
+  wp-passthrough)
+    _wp_filtered=()
+    for _a in "${WP_REST[@]:-}"; do [ -n "$_a" ] && _wp_filtered+=("$_a"); done
+    if [ -n "$WP_COMP" ]; then
+      bash "$ROOT/70-install-wordpress-ubuntu/run.sh" "$WP_SUB" "$WP_COMP" "${_wp_filtered[@]}"
+    else
+      bash "$ROOT/70-install-wordpress-ubuntu/run.sh" "$WP_SUB" "${_wp_filtered[@]}"
     fi
     ;;
   install|check|repair|uninstall)
