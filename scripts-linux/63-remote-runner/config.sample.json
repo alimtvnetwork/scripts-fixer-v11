@@ -10,6 +10,10 @@
     "strict_host_key_checking": false,
     "connect_timeout": 8
   },
+  "logging": {
+    "_comment": "Per-run log dirs live in scripts-linux/.logs/63/<TS>-<target>/. retain_runs=N keeps newest N (0 = keep all forever).",
+    "retain_runs": 50
+  },
   "groups": {
     "web":  ["web-1", "web-2"],
     "db":   ["db-1"],
