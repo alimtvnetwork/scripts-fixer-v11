@@ -33,7 +33,7 @@ export ROWS_TSV
 VERB=""; DRY_RUN=0; SCOPE=""; ONLY_CSV=""; SKIP_DETECT=0; ASSUME_YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    run|detect|list|help|--help|-h) [ -z "$VERB" ] && VERB="$1"; shift ;;
+    run|detect|resolve|list|help|--help|-h) [ -z "$VERB" ] && VERB="$1"; shift ;;
     --dry-run|-n)            DRY_RUN=1; shift ;;
     --scope)                 SCOPE="$2"; shift 2 ;;
     --scope=*)               SCOPE="${1#--scope=}"; shift ;;
