@@ -116,6 +116,11 @@ while [ $# -gt 0 ]; do
     # (groups first) with a single shared summary.
     useradm-bootstrap|usermgmt-bootstrap|user-bootstrap)
         VERB="useradm-bootstrap"; shift; USERADM_BOOT_REST=("$@"); break ;;
+    # ---- top-level shortcut: read-only verifier (script 68) ----
+    # Pass/fail audit of current user + group state. Same input shapes as
+    # the orchestrator (--spec / --groups-json / --users-json / --group / --user).
+    useradm-verify|usermgmt-verify|user-verify|verify-users)
+        VERB="useradm-verify"; shift; USERADM_VRF_REST=("$@"); break ;;
     *)
         # `./run.sh install wordpress [args]` lands here AFTER install was consumed.
         # Re-route it through the wp passthrough so the user-friendly form works.
