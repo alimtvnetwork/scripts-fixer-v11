@@ -121,6 +121,14 @@ while [ $# -gt 0 ]; do
     # the orchestrator (--spec / --groups-json / --users-json / --group / --user).
     useradm-verify|usermgmt-verify|user-verify|verify-users)
         VERB="useradm-verify"; shift; USERADM_VRF_REST=("$@"); break ;;
+    # ---- top-level shortcut: E2E test matrix for scripts 65/66/67 ----
+    # Runs every per-folder smoke test on the current OS, then drives
+    # each script through a sandbox-mode dry-run, then asserts the OS
+    # guard fires on the wrong OS, then asserts the root-requirement
+    # contract. Pure read-only on the host -- everything happens under
+    # mktemp sandboxes.
+    e2e-matrix|e2e|test-matrix)
+        VERB="e2e-matrix"; shift; break ;;
     *)
         # `./run.sh install wordpress [args]` lands here AFTER install was consumed.
         # Re-route it through the wp passthrough so the user-friendly form works.
@@ -278,6 +286,11 @@ User management (script 68 shortcuts; Linux + macOS):
   useradm-verify    [opts]     READ-ONLY pass/fail audit of current user +
                                group state. Same inputs as useradm-bootstrap.
                                Optional: --emit-snapshot FILE (TSV), --quiet.
+  e2e-matrix                   End-to-end test matrix for scripts 65/66/67.
+                               Runs per-folder smoke tests, sandboxed
+                               production dry-runs, OS-guard checks (66 on
+                               Linux, 67 on macOS), and root-requirement
+                               contract checks. Aliases: e2e, test-matrix.
 
 Flags:
   -I <id>              Restrict to a single script id
@@ -507,6 +520,11 @@ case "${VERB:-help}" in
     else
       bash "$ROOT/68-user-mgmt/verify.sh"
     fi
+    ;;
+  e2e-matrix)
+    # Pure test harness -- no helpers loaded, no root required, runs
+    # everything inside mktemp sandboxes and stubs.
+    bash "$ROOT/_shared/tests/e2e/run-matrix.sh"
     ;;
   install|check|repair|uninstall)
     if [ -n "$ONLY_ID" ]; then
