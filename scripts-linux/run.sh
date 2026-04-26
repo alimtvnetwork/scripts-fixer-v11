@@ -268,7 +268,11 @@ case "${VERB:-help}" in
     bash "$ROOT/66-vscode-menu-cleanup-mac/run.sh" "$VSCMAC_SUB" "${VSCMAC_REST[@]:-}"
     ;;
   vsclin-passthrough)
-    bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB" "${VSCLIN_REST[@]:-}"
+    if [ "${#VSCLIN_REST[@]}" -gt 0 ]; then
+      bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB" "${VSCLIN_REST[@]}"
+    else
+      bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB"
+    fi
     ;;
   install|check|repair|uninstall)
     if [ -n "$ONLY_ID" ]; then
