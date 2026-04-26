@@ -26,6 +26,7 @@ $sharedDir = Join-Path (Split-Path -Parent $scriptDir) "shared"
 . (Join-Path $scriptDir "helpers\audit-log.ps1")
 # Pull in scope helpers (Resolve-MenuScope, Convert-EditionPathsForScope).
 . (Join-Path $scriptDir "helpers\vscode-install.ps1")
+. (Join-Path $scriptDir "helpers\vscode-check.ps1")
 
 $configPath = Join-Path $scriptDir "config.json"
 $isConfigMissing = -not (Test-Path -LiteralPath $configPath)
@@ -78,6 +79,9 @@ try {
     $removed = 0
     $absent  = 0
     $failed  = 0
+    # Per-edition scope-rewritten configs -- needed by the post-op
+    # verification so it probes the exact hive we just touched.
+    $scopedEditions = @{}
 
     foreach ($editionName in $editions) {
         $editionCfg = $config.editions.$editionName
@@ -90,6 +94,7 @@ try {
         # Apply the scope rewrite BEFORE the allow-list is built so the
         # surgical removal targets the right hive.
         $editionCfg = Convert-EditionPathsForScope -EditionConfig $editionCfg -Scope $resolvedScope
+        $scopedEditions[$editionName] = $editionCfg
 
         Write-Log ($logMessages.messages.uninstallEdition -replace '\{name\}', $editionName) -Level "info"
 
@@ -120,6 +125,33 @@ try {
     $hasAuditPath = -not [string]::IsNullOrWhiteSpace($auditPath)
     if ($hasAuditPath) {
         Write-Log ($logMessages.messages.auditWritten -replace '\{path\}', $auditPath) -Level "info"
+    }
+
+    # ------------------------------------------------------------------
+    # Dedicated post-uninstall verification step.
+    #   1) Print the registry CHANGE report from the run's audit JSONL
+    #      so the user sees exactly what was removed / skipped / failed.
+    #   2) Re-probe every (scope-rewritten) target key and confirm it
+    #      is now ABSENT -- catches any leftover key the surgical
+    #      removal missed.
+    # ------------------------------------------------------------------
+    $hasScopedEditions = $scopedEditions.Count -gt 0
+    if ($hasScopedEditions) {
+        $auditSummary = Get-RegistryAuditSummary
+        Write-RegistryAuditReport -Summary $auditSummary -Action 'uninstall'
+
+        $verifyResult = Invoke-PostOpVerification `
+            -Action         'uninstall' `
+            -Config         $config `
+            -ResolvedScope  $resolvedScope `
+            -LogMsgs        $logMessages `
+            -ScopedEditions $scopedEditions
+
+        if ($verifyResult.fail -gt 0) {
+            Write-Log ("Post-uninstall verification reported " + $verifyResult.fail + " key(s) still present -- review the table above (failure path: see per-row regPath).") -Level "error"
+        }
+    } else {
+        Write-Log "Post-uninstall verification skipped: no editions were processed this run." -Level "warn"
     }
 
 } catch {
