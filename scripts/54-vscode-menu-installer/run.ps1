@@ -110,6 +110,8 @@ switch ($Command.ToLower()) {
         . (Join-Path $scriptDir "helpers\vscode-repair-check.ps1")
         # vscode-install.ps1 brings Resolve-MenuScope + Convert-EditionPathsForScope.
         . (Join-Path $scriptDir "helpers\vscode-install.ps1")
+        . (Join-Path $scriptDir "helpers\verbosity.ps1")
+        Set-VerbosityLevel -Level $Verbosity
 
         $configPath = Join-Path $scriptDir "config.json"
         $isConfigMissing = -not (Test-Path -LiteralPath $configPath)
