@@ -171,7 +171,10 @@ else
 fi
 
 # ---------- JSON output mode ----------
-json_out=$(bash "$SANDBOX_RUN" run --dry-run --only pkg-bun --json 2>&1 | tail -1)
+# --json prints the document on stdout; logger lines go to stderr but the
+# trailing "Done"/"Dry-run complete" line goes to stdout too. Grab the
+# first line that starts with `{` -- that's the JSON document.
+json_out=$(bash "$SANDBOX_RUN" run --dry-run --only pkg-bun --json 2>/dev/null | grep -m1 '^{')
 if command -v python3 >/dev/null 2>&1; then
   if printf '%s' "$json_out" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); assert 'totals' in d and 'rows' in d" 2>/dev/null; then
     _ok "[json] --json emits parseable document"
