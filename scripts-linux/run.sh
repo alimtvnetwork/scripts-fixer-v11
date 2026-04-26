@@ -206,6 +206,37 @@ Group management (script 68 shortcuts; Linux + macOS):
       --dry-run                Preview every record, change nothing
       Aliases: groups-from-json, add-group-from-json
 
+User management (script 68 shortcuts; Linux + macOS):
+  add-user <name> [opts]       Create one local user via direct CLI args
+      --password PW            Plain-text password (logged masked only)
+      --password-file FILE     Read password from a 0600 file
+      --uid N                  Pin numeric UID
+      --primary-group G        Primary group (created if missing on Linux)
+      --groups g1,g2,...       Supplementary groups (comma-separated)
+      --shell PATH             Login shell (default /bin/bash | /bin/zsh)
+      --home  PATH             Home dir (default /home/<n> | /Users/<n>)
+      --comment "..."          GECOS / RealName
+      --sudo                   Add to sudo (Linux) / admin (macOS) group
+      --system                 System account (Linux only)
+      --ssh-key "<line>"       Inline OpenSSH public key. Repeatable.
+      --ssh-key-file <path>    Read keys from a file (one per line, '#'
+                               and blanks ignored). Repeatable.
+                               Installed to <home>/.ssh/authorized_keys
+                               (mode 0600, dir 0700, owner=<user>:<pgroup>).
+                               Existing keys preserved, duplicates merged.
+                               Key contents NEVER logged -- only fingerprints.
+      --dry-run                Print what would happen, change nothing
+      Aliases: user-add
+  add-users-from-json <file>   Bulk-create users from a JSON file. Accepts:
+                                 single object  : { "name": "alice", ... }
+                                 array          : [ { ... }, { ... } ]
+                                 wrapped object : { "users": [ ... ] }
+                               Per-record fields: name, password, passwordFile,
+                                 uid, primaryGroup, groups[], shell, home,
+                                 comment, sudo, system, sshKeys[], sshKeyFiles[]
+      --dry-run                Preview every record, change nothing
+      Aliases: users-from-json, add-user-from-json
+
 Flags:
   -I <id>              Restrict to a single script id
   --parallel <N>       Run N installs in parallel (install verb only)
