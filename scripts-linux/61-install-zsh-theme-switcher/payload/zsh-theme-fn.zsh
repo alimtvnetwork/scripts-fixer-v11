@@ -1,4 +1,3 @@
-# >>> lovable zsh-theme switcher >>>
 # Provides the 'zsh-theme' command. Usage:
 #   zsh-theme               # interactive numbered menu
 #   zsh-theme agnoster      # switch immediately
@@ -100,4 +99,3 @@ EOF
   print -- "ZSH_THEME -> '${target}'. Reloading shell..."
   exec zsh
 }
-# <<< lovable zsh-theme switcher <<<
