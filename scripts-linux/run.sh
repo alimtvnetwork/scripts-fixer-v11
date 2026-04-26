@@ -76,7 +76,20 @@ while [ $# -gt 0 ]; do
         VERB="wp-passthrough"; WP_SUB="install"; WP_COMP=""; shift; WP_REST=("$@"); break ;;
     wp-only)
         VERB="wp-passthrough"; WP_SUB="install"; WP_COMP="wp-only"; shift; WP_REST=("$@"); break ;;
-    *) log_warn "Unknown arg: $1"; shift ;;
+    *)
+        # `./run.sh install wordpress [args]` lands here AFTER install was consumed.
+        # Re-route it through the wp passthrough so the user-friendly form works.
+        if [ "$VERB" = "install" ] && { [ "$1" = "wordpress" ] || [ "$1" = "wp" ] || [ "$1" = "wp-only" ]; }; then
+            comp=""
+            [ "$1" = "wp-only" ] && comp="wp-only"
+            VERB="wp-passthrough"; WP_SUB="install"; WP_COMP="$comp"; shift; WP_REST=("$@"); break
+        fi
+        if [ "$VERB" = "uninstall" ] && { [ "$1" = "wordpress" ] || [ "$1" = "wp" ] || [ "$1" = "wp-only" ]; }; then
+            comp=""
+            [ "$1" = "wp-only" ] && comp="wp-only"
+            VERB="wp-passthrough"; WP_SUB="uninstall"; WP_COMP="$comp"; shift; WP_REST=("$@"); break
+        fi
+        log_warn "Unknown arg: $1"; shift ;;
   esac
 done
 
