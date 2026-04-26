@@ -22,6 +22,11 @@
     "noNameField":         "record has no 'name' field (failure: cannot identify target)",
     "dryRunBanner":        "DRY RUN -- no changes will be applied",
     "summaryHeader":       "=== 68-user-mgmt summary ===",
-    "summaryRow":          "  %-8s %-20s %s"
+    "summaryRow":          "  %-8s %-20s %s",
+    "sshKeyMalformed":     "ssh key looks malformed (does not start with a known algo): '%s' -- skipping this entry",
+    "sshKeyNoneValid":     "no valid ssh keys found among %s requested entries (failure: nothing to install)",
+    "sshHomeMissing":      "home dir '%s' does not exist for user '%s' -- skipping ssh key install (failure: create home first)",
+    "sshOwnerWarn":        "could not chown '%s' to '%s' -- file is in place but owner unchanged",
+    "sshKeyInstalled":     "installed ssh keys to '%s' (added %s new of %s requested; existing keys preserved)"
   }
 }

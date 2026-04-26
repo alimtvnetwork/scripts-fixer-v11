@@ -23,5 +23,6 @@ Tracks every point of unclear requirement or inference made during the
 | #  | File | Task / Topic | Inference used | Status |
 |----|------|--------------|----------------|--------|
 | 01 | [01-add-group-shell-scripts.md](./01-add-group-shell-scripts.md) | Add separate shell scripts for Unix group creation (JSON + CLI) and wire into root | **Option B** — kept the existing `68-user-mgmt/add-group*.sh` pair; added `add-group` / `add-groups-from-json` shortcuts (+ aliases) to `scripts-linux/run.sh`; no new script slot or registry entry. | open |
+| 02 | [02-user-from-json-ssh-keys.md](./02-user-from-json-ssh-keys.md) | Root Unix script: create user from JSON spec with home dir + password/SSH key handling | **Option C** — extended `68-user-mgmt/add-user{,-from-json}.sh` with `--ssh-key` / `--ssh-key-file` (repeatable) + JSON `sshKeys[]` / `sshKeyFiles[]`; wrote keys to `<home>/.ssh/authorized_keys` (700/600, owned, deduped, fingerprinted, key bodies never logged); added `add-user` / `add-users-from-json` root shortcuts. | open |
 
 _Append new rows here as ambiguities are logged._

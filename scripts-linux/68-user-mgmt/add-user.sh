@@ -40,6 +40,20 @@ Optional:
   --sudo                       add to sudo group (Linux: 'sudo', macOS: 'admin')
   --system                     create system account (Linux only; ignored on macOS)
   --dry-run                    print what would happen, change nothing
+
+SSH authorized_keys (repeatable; both flags may be combined):
+  --ssh-key "<key-line>"       Inline OpenSSH public key (entire single line,
+                               e.g. "ssh-ed25519 AAAA... user\@host"). Adds
+                               one authorized key. Pass the flag multiple
+                               times for multiple keys.
+  --ssh-key-file <path>        Read one OR many keys from a local file (one
+                               key per line; blanks + '#' comments ignored).
+                               Pass the flag multiple times for multiple files.
+                               Installed to <home>/.ssh/authorized_keys with
+                               mode 0600 (dir 0700) and owner=<name>:<pgroup>.
+                               Existing entries are preserved; duplicates are
+                               de-duplicated. Key contents are NEVER logged --
+                               only a SHA-256 fingerprint + source.
 EOF
 }
 
@@ -56,6 +70,9 @@ UM_COMMENT=""
 UM_SUDO=0
 UM_SYSTEM=0
 UM_DRY_RUN="${UM_DRY_RUN:-0}"
+# SSH keys -- two parallel arrays, each entry processed in order.
+UM_SSH_KEYS=()        # inline key lines
+UM_SSH_KEY_FILES=()   # file paths
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -71,6 +88,8 @@ while [ $# -gt 0 ]; do
     --sudo)            UM_SUDO=1; shift ;;
     --system)          UM_SYSTEM=1; shift ;;
     --dry-run)         UM_DRY_RUN=1; shift ;;
+    --ssh-key)         UM_SSH_KEYS+=("${2:-}"); shift 2 ;;
+    --ssh-key-file)    UM_SSH_KEY_FILES+=("${2:-}"); shift 2 ;;
     --) shift; break ;;
     -*)
       log_err "unknown option: '$1' (failure: see --help)"
@@ -233,6 +252,134 @@ if [ -n "$UM_RESOLVED_PASSWORD" ]; then
   fi
 fi
 
+# ---- SSH authorized_keys ---------------------------------------------------
+# Collected sources -> de-duplicated -> appended to <home>/.ssh/authorized_keys
+# with strict perms (700 dir, 600 file, owned by the new user). Key contents
+# are NEVER written to logs; we only echo a fingerprint + the source.
+#
+# Skipped silently when no keys were supplied. Skipped (with a warn) if the
+# home directory does not exist on disk -- which can happen when --system
+# is used without --create-home, or when --dry-run prevented home creation.
+UM_SSH_INSTALLED_COUNT=0
+UM_SSH_REQUESTED_COUNT=$(( ${#UM_SSH_KEYS[@]} + ${#UM_SSH_KEY_FILES[@]} ))
+
+if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
+
+  # Build a single newline-separated buffer of every requested key.
+  # Inline keys come first (in CLI order), then file-sourced keys.
+  _ssh_buf=""
+  _ssh_emit() {
+    local k="$1"
+    # Strip CR + leading/trailing whitespace; ignore blanks + comments.
+    k="${k%$'\r'}"
+    k="${k#"${k%%[![:space:]]*}"}"
+    k="${k%"${k##*[![:space:]]}"}"
+    [ -z "$k" ] && return 0
+    case "$k" in \#*) return 0 ;; esac
+    # Sanity: must look like an OpenSSH public key (algo + base64 chunk).
+    case "$k" in
+      ssh-rsa\ *|ssh-dss\ *|ssh-ed25519\ *|ecdsa-sha2-*|sk-*) ;;
+      *)
+        log_warn "$(um_msg sshKeyMalformed "${k:0:30}...")"
+        return 0 ;;
+    esac
+    if [ -z "$_ssh_buf" ]; then _ssh_buf="$k"
+    else                        _ssh_buf="$_ssh_buf"$'\n'"$k"
+    fi
+  }
+
+  for k in "${UM_SSH_KEYS[@]}"; do _ssh_emit "$k"; done
+
+  for f in "${UM_SSH_KEY_FILES[@]}"; do
+    if [ ! -f "$f" ]; then
+      log_file_error "$f" "ssh key file not found"
+      continue
+    fi
+    if [ ! -r "$f" ]; then
+      log_file_error "$f" "ssh key file not readable"
+      continue
+    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+      _ssh_emit "$line"
+    done < "$f"
+  done
+
+  # De-duplicate while preserving order. Awk on the buffer.
+  _ssh_buf=$(printf '%s\n' "$_ssh_buf" | awk 'NF && !seen[$0]++')
+  _ssh_count=$(printf '%s\n' "$_ssh_buf" | awk 'NF' | wc -l | tr -d ' ')
+
+  if [ "$_ssh_count" -eq 0 ]; then
+    log_warn "$(um_msg sshKeyNoneValid "$UM_SSH_REQUESTED_COUNT")"
+  else
+    _ssh_dir="$UM_HOME/.ssh"
+    _ssh_file="$_ssh_dir/authorized_keys"
+
+    if [ "$UM_DRY_RUN" = "1" ]; then
+      log_info "[dry-run] would install $_ssh_count ssh key(s) to $_ssh_file (mode 0600, dir 0700, owner $UM_NAME)"
+      # Print fingerprints (never key bodies) so the operator can audit.
+      while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        if command -v ssh-keygen >/dev/null 2>&1; then
+          fp=$(printf '%s\n' "$line" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')
+        elif command -v sha256sum >/dev/null 2>&1; then
+          fp="sha256:"$(printf '%s' "$line" | sha256sum | awk '{print $1}')
+        else
+          fp="(no fingerprinter on PATH)"
+        fi
+        log_info "[dry-run]   key fingerprint: $fp"
+      done <<< "$_ssh_buf"
+      UM_SSH_INSTALLED_COUNT="$_ssh_count"
+    else
+      if [ ! -d "$UM_HOME" ]; then
+        log_warn "$(um_msg sshHomeMissing "$UM_HOME" "$UM_NAME")"
+      else
+        # mkdir -p is idempotent; we always re-assert mode + owner so a
+        # half-baked previous run can't leave 0755 perms behind.
+        if ! mkdir -p "$_ssh_dir" 2>/dev/null; then
+          log_file_error "$_ssh_dir" "could not create .ssh dir"
+        else
+          chmod 0700 "$_ssh_dir" 2>/dev/null \
+            || log_file_error "$_ssh_dir" "could not chmod 0700"
+
+          # Merge: append only NEW keys (not already present in the file).
+          existing=""
+          [ -f "$_ssh_file" ] && existing=$(cat "$_ssh_file" 2>/dev/null)
+          merged=$(printf '%s\n%s\n' "$existing" "$_ssh_buf" | awk 'NF && !seen[$0]++')
+          if ! printf '%s\n' "$merged" > "$_ssh_file" 2>/dev/null; then
+            log_file_error "$_ssh_file" "could not write authorized_keys"
+          else
+            chmod 0600 "$_ssh_file" 2>/dev/null \
+              || log_file_error "$_ssh_file" "could not chmod 0600"
+            chown "$UM_NAME:$UM_PRIMARY_GROUP" "$_ssh_dir" "$_ssh_file" 2>/dev/null \
+              || log_warn "$(um_msg sshOwnerWarn "$_ssh_file" "$UM_NAME:$UM_PRIMARY_GROUP")"
+
+            # Count net-new lines added this run.
+            before_n=$(printf '%s\n' "$existing" | awk 'NF' | wc -l | tr -d ' ')
+            after_n=$(printf '%s\n' "$merged"   | awk 'NF' | wc -l | tr -d ' ')
+            added=$(( after_n - before_n ))
+            UM_SSH_INSTALLED_COUNT="$_ssh_count"
+            log_ok "$(um_msg sshKeyInstalled "$_ssh_file" "$added" "$_ssh_count")"
+
+            # Audit fingerprints (NEVER full key bodies).
+            while IFS= read -r line; do
+              [ -z "$line" ] && continue
+              if command -v ssh-keygen >/dev/null 2>&1; then
+                fp=$(printf '%s\n' "$line" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')
+              elif command -v sha256sum >/dev/null 2>&1; then
+                fp="sha256:"$(printf '%s' "$line" | sha256sum | awk '{print $1}')
+              else
+                fp="(no fingerprinter on PATH)"
+              fi
+              log_info "  key fingerprint: $fp"
+            done <<< "$_ssh_buf"
+          fi
+        fi
+      fi
+    fi
+    um_summary_add "ok" "ssh-key" "$UM_NAME" "$_ssh_count requested -> $UM_SSH_INSTALLED_COUNT installed"
+  fi
+fi
+
 # ---- console summary (masked) ----------------------------------------------
 printf '\n'
 printf '  User         : %s\n' "$UM_NAME"
@@ -243,5 +390,9 @@ printf '  Primary group: %s\n' "$UM_PRIMARY_GROUP"
 if [ -n "$UM_GROUP_LIST" ]; then printf '  Extra groups : %s\n' "$UM_GROUP_LIST"; fi
 if [ -n "$UM_RESOLVED_PASSWORD" ]; then
   printf '  Password     : %s  (passed via CLI/JSON -- never logged)\n' "$UM_MASKED_PW"
+fi
+if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
+  printf '  SSH keys     : requested=%d installed=%d (file: %s/.ssh/authorized_keys)\n' \
+    "$UM_SSH_REQUESTED_COUNT" "$UM_SSH_INSTALLED_COUNT" "$UM_HOME"
 fi
 printf '\n'
