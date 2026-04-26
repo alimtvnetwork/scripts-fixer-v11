@@ -46,6 +46,9 @@ Write-Banner -Title ($logMessages.scriptName + " -- uninstall")
 Initialize-Logging -ScriptName ($logMessages.scriptName + " -- uninstall")
 
 try {
+    # -- Verbosity (controls verification + audit-report loudness) -----------
+    Set-VerbosityLevel -Level $Verbosity
+
     # -- Resolve scope + admin gate ------------------------------------------
     # Uninstall mirrors install's scope rules: AllUsers needs admin,
     # CurrentUser does not. Auto = AllUsers when admin, else CurrentUser.
