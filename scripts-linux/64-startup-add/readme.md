@@ -11,6 +11,7 @@ Mirrors the Windows-side `scripts/os/` startup block.
 | `env`    | Persist an environment variable (KEY=VALUE) |
 | `list`   | List all entries tagged `lovable-startup-*` |
 | `remove` | Remove a single entry by name (optionally scoped by `--method`) |
+| `duplicates` | Report identical entries registered through multiple methods or with identical bodies |
 
 ## Methods
 
@@ -143,6 +144,30 @@ single registration type. The same family alias used by `remove` works here:
 ```
 
 Unknown methods produce an empty result (exit 0), not an error.
+
+## Duplicates report
+
+`duplicates` (alias `dupes`) scans every tagged entry across all six
+registration methods and surfaces two kinds of collision:
+
+- **by-name** — the same logical name registered under two or more methods
+  (e.g. `demo` is both a `launchagent` *and* a `login-item`). Often a sign of
+  an aborted migration from one method to another.
+- **by-content** — the underlying file body hashes (sha256) to the same value
+  as another entry. Catches accidental copy/paste duplicates even when the
+  names differ. For shell-rc blocks the hash covers only the body of the
+  marker block; for `login-item` it hashes the bundle path string.
+
+```bash
+./run.sh -I 64 -- duplicates                     # human table
+./run.sh -I 64 -- duplicates --json              # machine-readable
+./run.sh -I 64 -- duplicates --csv > dupes.csv   # CSV stream
+./run.sh -I 64 -- duplicates --output ~/dupes.txt
+```
+
+Exit code is always 0; an empty report just means no duplicates were found.
+If `python3` is unavailable, the report falls back to name-based grouping
+only (no content hashing) and emits a warning.
 
 ## Tag convention
 

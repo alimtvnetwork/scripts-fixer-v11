@@ -38,6 +38,7 @@ Subverbs:
   app  <path>     [--method M] [--name N] [--args "..."] [--interactive]
   env  KEY=VALUE  [--scope user] [--method shell-rc|systemd-env|launchctl]
   list            [--method M] [--json|--csv|--format=table|json|csv] [--output FILE]
+  duplicates      [--json|--csv] [--output FILE]
   remove <name>   [--method ...]
 
 Linux methods : autostart | systemd-user | shell-rc
@@ -56,6 +57,7 @@ main() {
     app|startup-app)               ensure_run_dir; cmd_app    "$@"; exit $? ;;
     env|startup-env)               ensure_run_dir; cmd_env    "$@"; exit $? ;;
     list|startup-list|ls)          cmd_list   "$@"; exit $? ;;
+    duplicates|dupes|dups)         cmd_duplicates "$@"; exit $? ;;
     remove|startup-remove|rm|del)  ensure_run_dir; cmd_remove "$@"; exit $? ;;
     prune|startup-prune|purge)     ensure_run_dir; cmd_prune  "$@"; exit $? ;;
     ""|help|-h|--help) usage; exit 0 ;;
@@ -667,6 +669,251 @@ cmd_prune() {
 
   log_ok "[64] prune: removed $removed entr$([ $removed -eq 1 ] && echo y || echo ies)$([ $failed -gt 0 ] && echo " ($failed failed)")"
   [ $failed -eq 0 ]
+}
+
+# ---- duplicates report -----------------------------------------------------
+# Identifies entries that are "the same thing" registered more than once.
+# Two notions of duplicate are reported:
+#   1. by-name   : same logical name registered under 2+ methods (e.g. an app
+#                  installed both as a launchagent and as a login item).
+#   2. by-content: file-based entries (autostart, systemd-user, launchagent,
+#                  login-item plist) whose body hashes to the same SHA-256.
+#                  For shell-rc-app blocks we hash the body of the marker
+#                  block; for shell-rc-env we hash each `export KEY=VAL` line.
+# Output formats: human table (default), --json, --csv, all routable to
+# --output FILE just like `list`.
+cmd_duplicates() {
+  if ! declare -f list_startup_entries >/dev/null 2>&1; then
+    log_file_error "$SCRIPT_DIR/helpers/enumerate.sh" "list_startup_entries not loaded"
+    return 1
+  fi
+  local fmt="table" out_file=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json)        fmt="json"; shift ;;
+      --csv)         fmt="csv";  shift ;;
+      --format)      fmt="${2:-table}"; shift 2 ;;
+      --format=*)    fmt="${1#--format=}"; shift ;;
+      -o|--output)   out_file="${2:-}"; shift 2 ;;
+      --output=*)    out_file="${1#--output=}"; shift ;;
+      -h|--help)     usage; return 0 ;;
+      *) log_warn "[64] duplicates: ignoring extra arg: $1"; shift ;;
+    esac
+  done
+
+  if [ -n "$out_file" ]; then
+    local out_dir; out_dir=$(dirname -- "$out_file")
+    if ! mkdir -p -- "$out_dir" 2>/dev/null; then
+      log_file_error "$out_file" "cannot create parent directory: $out_dir"
+      return 1
+    fi
+    if ! : >"$out_file" 2>/dev/null; then
+      log_file_error "$out_file" "cannot write to output file"
+      return 1
+    fi
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    log_warn "[64] duplicates: python3 not found; report limited to name-based grouping"
+    _emit_dupes_bash "$fmt" "$out_file"
+    return $?
+  fi
+
+  local generator
+  generator="$(_collect_dupe_inputs)"
+  if [ -n "$out_file" ]; then
+    printf '%s' "$generator" | _emit_dupes_python "$fmt" >"$out_file" || return $?
+    log_info "[64] wrote $fmt duplicates report to: $out_file"
+    return 0
+  fi
+  printf '%s' "$generator" | _emit_dupes_python "$fmt"
+}
+
+# Build TSV input for the python reporter:
+#   <method>\t<name>\t<path>\t<scope>\t<content-hash>
+# `content-hash` is sha256 of the underlying body, or empty if we cannot read
+# the entry (e.g. login-item paths we cannot stat).
+_collect_dupe_inputs() {
+  local tag="${STARTUP_TAG_PREFIX:-lovable-startup}"
+  local rc_path=""
+  if declare -f detect_shell_rc >/dev/null 2>&1; then
+    rc_path=$(detect_shell_rc 2>/dev/null || true)
+  fi
+
+  while IFS=$'\t' read -r m n p scope; do
+    [ -z "${m:-}" ] && continue
+    local hash=""
+    case "$m" in
+      autostart|systemd-user|launchagent)
+        if [ -f "$p" ]; then
+          hash=$(_sha256_of_file "$p")
+        fi
+        ;;
+      shell-rc-app)
+        if [ -f "$p" ]; then
+          hash=$(_extract_shell_rc_block "$p" "$tag" "$n" "app" | _sha256_of_stdin)
+        fi
+        ;;
+      shell-rc-env)
+        if [ -f "$p" ]; then
+          hash=$(_extract_shell_rc_env_line "$p" "$tag" "$n" | _sha256_of_stdin)
+        fi
+        ;;
+      login-item)
+        # `p` is the on-disk app bundle. Hashing a .app would be huge; use the
+        # path itself as the identity so two login items pointing at the same
+        # bundle still collide.
+        hash=$(printf 'path:%s' "$p" | _sha256_of_stdin)
+        ;;
+    esac
+    printf '%s\t%s\t%s\t%s\t%s\n' "$m" "$n" "$p" "${scope:-user}" "$hash"
+  done < <(list_startup_entries)
+}
+
+_sha256_of_file() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum -- "$1" 2>/dev/null | awk '{print $1}'
+  elif command -v shasum   >/dev/null 2>&1; then shasum -a 256 -- "$1" 2>/dev/null | awk '{print $1}'
+  else echo ""; fi
+}
+_sha256_of_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum 2>/dev/null | awk '{print $1}'
+  elif command -v shasum   >/dev/null 2>&1; then shasum -a 256 2>/dev/null | awk '{print $1}'
+  else cat >/dev/null; echo ""; fi
+}
+
+# Print the body of a `# >>> tag-name (tag-app) >>>` ... `# <<< tag-name <<<`
+# block from the rc file, excluding the marker lines themselves.
+_extract_shell_rc_block() {
+  local rc="$1" tag="$2" name="$3" kind="$4"
+  awk -v tag="$tag" -v name="$name" -v kind="$kind" '
+    $0 == "# >>> "tag"-"name" ("tag"-"kind") >>>" {inb=1; next}
+    $0 == "# <<< "tag"-"name" <<<"                {inb=0; next}
+    inb { print }
+  ' "$rc"
+}
+
+# For shell-rc-env: emit the single `export KEY=VALUE` line for KEY = $name,
+# from inside the env block. That makes "same KEY -> same VALUE" hash equal.
+_extract_shell_rc_env_line() {
+  local rc="$1" tag="$2" key="$3"
+  awk -v tag="$tag" -v key="$key" '
+    $0 == "# >>> "tag"-env (managed) >>>" {inb=1; next}
+    $0 == "# <<< "tag"-env <<<"           {inb=0; next}
+    inb && $0 ~ ("^export "key"=") { print; exit }
+  ' "$rc"
+}
+
+# Python reporter: read TSV (method,name,path,scope,hash) on stdin, emit a
+# table/json/csv on stdout. Exit 0 always (a clean report with zero groups
+# is a valid result); the human table writes "no duplicates found." in that
+# case.
+_emit_dupes_python() {
+  local fmt="$1"
+  local tag="${STARTUP_TAG_PREFIX:-lovable-startup}"
+  python3 -c '
+import json, sys, csv, collections
+fmt = sys.argv[1]
+tag = sys.argv[2]
+rows = []
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line: continue
+    parts = line.split("\t")
+    while len(parts) < 5: parts.append("")
+    rows.append(dict(method=parts[0], name=parts[1], path=parts[2],
+                     scope=parts[3] or "user", hash=parts[4]))
+
+# Group by name (cross-method dupes).
+by_name = collections.defaultdict(list)
+for r in rows:
+    by_name[r["name"]].append(r)
+name_groups = []
+for name, entries in by_name.items():
+    if len(entries) >= 2:
+        name_groups.append({
+            "kind": "by-name",
+            "key":  name,
+            "count": len(entries),
+            "entries": [{k: e[k] for k in ("method","name","path","scope")} for e in entries],
+        })
+
+# Group by content-hash (skip empty hashes; skip groups already covered by
+# a single-method same-name pair, since that is shown elsewhere).
+by_hash = collections.defaultdict(list)
+for r in rows:
+    if r["hash"]:
+        by_hash[r["hash"]].append(r)
+hash_groups = []
+for h, entries in by_hash.items():
+    if len(entries) < 2: continue
+    hash_groups.append({
+        "kind": "by-content",
+        "key":  h[:12],   # short prefix is enough for humans
+        "count": len(entries),
+        "entries": [{k: e[k] for k in ("method","name","path","scope")} for e in entries],
+    })
+
+name_groups.sort(key=lambda g: g["key"])
+hash_groups.sort(key=lambda g: (-g["count"], g["key"]))
+groups = name_groups + hash_groups
+
+if fmt == "json":
+    out = {
+        "tag": tag,
+        "by_name_count": len(name_groups),
+        "by_content_count": len(hash_groups),
+        "groups": groups,
+    }
+    json.dump(out, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+elif fmt == "csv":
+    w = csv.writer(sys.stdout, lineterminator="\n")
+    w.writerow(["kind","key","method","name","path","scope"])
+    for g in groups:
+        for e in g["entries"]:
+            w.writerow([g["kind"], g["key"], e["method"], e["name"], e["path"], e["scope"]])
+else:  # table
+    if not groups:
+        print("no duplicates found.")
+        sys.exit(0)
+    print("DUPLICATES REPORT")
+    print("-" * 60)
+    for g in groups:
+        label = "name" if g["kind"] == "by-name" else "content sha256"
+        kind = g["kind"]; key = g["key"]; cnt = g["count"]
+        print("\n[%s] %s = %s  (%d entries)" % (kind, label, key, cnt))
+        for e in g["entries"]:
+            print("  - %-14s %-20s %s" % (e["method"], e["name"], e["path"]))
+    print("")
+    print("summary: %d by-name group(s), %d by-content group(s)." %
+          (len(name_groups), len(hash_groups)))
+' "$fmt" "$tag"
+}
+
+# Bash-only fallback when python3 is missing. Reports name-based duplicates
+# only (no content hashing) using sort+uniq. Always exits 0.
+_emit_dupes_bash() {
+  local fmt="$1" out_file="$2"
+  local body
+  body=$(list_startup_entries | awk -F'\t' '
+    NF==0 { next }
+    { count[$2]++; lines[$2] = lines[$2] $0 "\n" }
+    END {
+      groups=0
+      for (n in count) if (count[n] >= 2) {
+        groups++
+        printf "\n[by-name] name = %s  (%d entries)\n", n, count[n]
+        printf "%s", lines[n]
+      }
+      if (groups == 0) print "no duplicates found."
+      else printf "\nsummary: %d by-name group(s).\n", groups
+    }
+  ')
+  if [ -n "$out_file" ]; then printf '%s\n' "$body" >"$out_file"
+                              log_info "[64] wrote $fmt duplicates report to: $out_file"
+                         else printf '%s\n' "$body"
+  fi
+  return 0
 }
 
 main "$@"
