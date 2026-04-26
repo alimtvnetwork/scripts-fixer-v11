@@ -1,0 +1,26 @@
+{
+  "description": "Safer ZSH uninstall: restore previous ~/.zshrc backup AND surgically remove only marker-bounded blocks (60 extras + 61 switcher). Never deletes user custom config unless aggressive flags opt in.",
+  "backup_before_clear": true,
+  "restore_from_backup": true,
+  "backup_root": "~/.zsh-backups",
+  "marker_pairs": [
+    {
+      "name": "60-extras",
+      "begin": "# >>> lovable zsh extras >>>",
+      "end":   "# <<< lovable zsh extras <<<"
+    },
+    {
+      "name": "61-switcher",
+      "begin": "# >>> lovable zsh-theme switcher >>>",
+      "end":   "# <<< lovable zsh-theme switcher <<<"
+    }
+  ],
+  "aggressive": {
+    "remove_zshrc": false,
+    "remove_oh_my_zsh_dir": false,
+    "remove_apt_zsh_pkg": false,
+    "restore_default_shell": false,
+    "restore_shell_path": "/bin/bash"
+  },
+  "clear_install_markers": ["60.ok", "61.ok"]
+}
