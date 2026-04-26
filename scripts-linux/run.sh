@@ -58,13 +58,22 @@ while [ $# -gt 0 ]; do
         VERB="vscmac-passthrough"; VSCMAC_SUB="list"; shift; VSCMAC_REST=("$@"); break ;;
     vscode-mac-clean-help|menu-clean-mac-help)
         VERB="vscmac-passthrough"; VSCMAC_SUB="help"; shift; VSCMAC_REST=("$@"); break ;;
+    # ---- top-level shortcuts to script 67 (Linux VS Code cleanup) ----
+    vscode-clean-linux|vscode-linux-clean|vscode-uninstall-linux)
+        VERB="vsclin-passthrough"; VSCLIN_SUB="run";    shift; VSCLIN_REST=("$@"); break ;;
+    vscode-clean-linux-detect|vscode-linux-clean-detect)
+        VERB="vsclin-passthrough"; VSCLIN_SUB="detect"; shift; VSCLIN_REST=("$@"); break ;;
+    vscode-clean-linux-list|vscode-linux-clean-list)
+        VERB="vsclin-passthrough"; VSCLIN_SUB="list";   shift; VSCLIN_REST=("$@"); break ;;
+    vscode-clean-linux-help|vscode-linux-clean-help)
+        VERB="vsclin-passthrough"; VSCLIN_SUB="help";   shift; VSCLIN_REST=("$@"); break ;;
     *) log_warn "Unknown arg: $1"; shift ;;
   esac
 done
 
 show_help() {
   cat <<EOF
-Linux Installer Toolkit (v0.128.0)
+Linux Installer Toolkit (v0.129.0)
 
 Per-script verbs:
   install              Install
@@ -109,6 +118,18 @@ macOS VS Code menu cleanup (script 66 shortcuts; macOS only):
       --only A,B,C             Limit to comma-separated category ids
       --edition stable|insiders Limit to one VS Code edition
   vscode-mac-clean-list        Print all defined cleanup categories
+
+Linux VS Code uninstaller (script 67 shortcuts; Linux only):
+  vscode-clean-linux           Detect install method (apt|snap|deb|tarball|
+                               user-config) and remove ONLY the matching
+                               packages, files, and configuration.
+      --dry-run                Preview every targeted package/path
+      --scope user|system      Default 'auto': system if root, else user
+      --only A,B,C             Limit to comma-separated method ids
+      --skip-detect            Run --only methods without re-probing
+  vscode-clean-linux-detect    Detect-only: print which install methods are
+                               present, no changes
+  vscode-clean-linux-list      Print catalog of methods + probes + steps
 
 Flags:
   -I <id>              Restrict to a single script id
@@ -245,6 +266,17 @@ case "${VERB:-help}" in
     ;;
   vscmac-passthrough)
     bash "$ROOT/66-vscode-menu-cleanup-mac/run.sh" "$VSCMAC_SUB" "${VSCMAC_REST[@]:-}"
+    ;;
+  vsclin-passthrough)
+    # Filter out a stray empty element that some bash versions add when "$@"
+    # was empty at the time VSCLIN_REST=("$@") was set.
+    _vsclin_filtered=()
+    for _a in "${VSCLIN_REST[@]:-}"; do [ -n "$_a" ] && _vsclin_filtered+=("$_a"); done
+    if [ "${#_vsclin_filtered[@]}" -gt 0 ]; then
+      bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB" "${_vsclin_filtered[@]}"
+    else
+      bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB"
+    fi
     ;;
   install|check|repair|uninstall)
     if [ -n "$ONLY_ID" ]; then
