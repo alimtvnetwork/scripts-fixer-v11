@@ -107,3 +107,76 @@ The harness reads `config.confirmBeforeLaunch.enabled`:
   `pwsh ... confirm-launch.ps1 ... Invoke-ConfirmedCommand -CommandLine '<inner>' -Label '...' -CountdownSeconds N`.
 
 You don't pass the mode to the harness -- it picks the right assertions automatically.
+
+## Companion: `run-scope-matrix.ps1` (mutating)
+
+`run-tests.ps1` is read-only. `run-scope-matrix.ps1` is the **mutating**
+sibling that exercises the per-user vs per-machine scope plumbing
+end-to-end. It runs the full `install -> verify -> uninstall -> verify`
+cycle once per scope:
+
+| Scope         | Hive written / probed                                      | Admin? |
+|---------------|------------------------------------------------------------|--------|
+| `CurrentUser` | `HKEY_CURRENT_USER\Software\Classes\…`                     | no     |
+| `AllUsers`    | `HKEY_CLASSES_ROOT\…` (physically `HKLM\Software\Classes`) | yes    |
+
+For each scope it asserts:
+
+1. After install, every expected key for **this** scope exists.
+2. After install, **no** key was created in the OPPOSITE hive (cross-hive
+   bleed catches scope-routing bugs that the merged HKCR view would hide).
+3. After uninstall, every expected key is gone.
+4. After uninstall, the opposite hive is still untouched (no late bleed).
+
+The harness sources `helpers\vscode-install.ps1` so it rewrites paths via
+the same `Convert-EditionPathsForScope` the production code uses --
+a divergent re-implementation here would silently mask real bugs.
+
+### Usage
+
+```powershell
+# Both scopes; AllUsers is auto-skipped if not elevated
+.\run-scope-matrix.ps1
+
+# CurrentUser only (no admin needed)
+.\run-scope-matrix.ps1 -OnlyScope CurrentUser
+
+# AllUsers only (must run elevated -- exits 3 otherwise)
+.\run-scope-matrix.ps1 -OnlyScope AllUsers
+
+# Single edition
+.\run-scope-matrix.ps1 -Edition stable
+
+# Dry-run: print plan + expected paths, change nothing
+.\run-scope-matrix.ps1 -WhatIf
+
+# Don't bail on first install failure (collect everything)
+.\run-scope-matrix.ps1 -KeepGoing
+
+# CI-friendly
+.\run-scope-matrix.ps1 -NoColor
+```
+
+### Granular exit codes
+
+| Exit | Meaning                                                          |
+|------|------------------------------------------------------------------|
+| 0    | all green                                                        |
+| 2    | pre-flight failed (config / install.ps1 / uninstall.ps1 missing) |
+| 3    | `-OnlyScope AllUsers` requested but harness not elevated         |
+| 10   | CurrentUser: post-install verification failed                    |
+| 11   | CurrentUser: post-uninstall verification failed (residue)        |
+| 12   | CurrentUser: cross-hive bleed (HKLM key created)                 |
+| 20   | AllUsers:    post-install verification failed                    |
+| 21   | AllUsers:    post-uninstall verification failed (residue)        |
+| 22   | AllUsers:    cross-hive bleed (HKCU key created)                 |
+| 30   | both scopes had failures                                         |
+
+### Safety notes
+
+- This harness performs **real registry writes** in HKCU and (when elevated)
+  HKLM\Software\Classes. Run it on a sandbox / VM, not a production machine.
+- Strict allow-list: the bleed check probes only the exact opposite-scope
+  paths derived from `config.json`. It never enumerates the registry.
+- CODE RED: every missing prerequisite (config.json, install.ps1, helpers
+  module) is reported with the exact path + failure reason before exit.
