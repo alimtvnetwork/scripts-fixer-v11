@@ -39,7 +39,7 @@ done
 
 show_help() {
   cat <<EOF
-Linux Installer Toolkit (v0.120.0)
+Linux Installer Toolkit (v0.123.0)
 
 Per-script verbs:
   install              Install
