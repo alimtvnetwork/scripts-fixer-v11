@@ -90,3 +90,22 @@ pointing at 68 or be repointed in one line.
   68 layout), add a registry entry, repoint the two root case arms to the
   new path. No data migration — group state lives in `/etc/group`, not
   in the repo.
+
+## Follow-ups discovered during smoke-test (NOT fixed in this task)
+
+Found while dry-run-testing the new shortcuts. Logged here so the user
+can decide priority — kept out of this task's diff to honor the "only
+change what was asked" rule.
+
+1. `scripts-linux/68-user-mgmt/add-group.sh` line 69 runs
+   `getent group "$UM_NAME" | awk -F: '{print $3}'` even when
+   `UM_DRY_RUN=1` and no group was actually created. Result on a
+   minimal sandbox: `getent: command not found` + a misleading
+   `created group 'X' (gid=)` log line.
+   Suggested fix: gate the `getent` block on `[ "$UM_DRY_RUN" != "1" ]`
+   and emit `would-create` instead of `created` in dry-run mode.
+   Same pattern likely repeats in `add-user.sh`.
+2. `getent` itself is missing on this sandbox image (it ships with
+   glibc on real Ubuntu hosts so this won't reproduce in production,
+   but a `command -v getent` guard would make the script portable to
+   minimal containers / Alpine-derivative test images).
