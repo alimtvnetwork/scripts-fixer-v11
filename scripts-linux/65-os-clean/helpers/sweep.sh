@@ -100,10 +100,12 @@ sweep_contents() {
   if [ ! -e "$path" ]; then
     _SW_NOTES="${_SW_NOTES}Path not present: ${path}
 "
+    _sw_emit_target "missing" "rm-dir" "$path" 0 "directory absent before sweep"
     return 0
   fi
   if [ ! -d "$path" ]; then
     log_file_error "$path" "expected directory, got non-dir entry"
+    _sw_emit_target "failed" "rm-dir" "$path" 0 "expected directory; non-dir on disk"
     return 1
   fi
 
@@ -126,15 +128,24 @@ sweep_contents() {
 
   local entry rc err
   while IFS= read -r -d '' entry; do
+    local entry_kind="rm-file"
+    [ -d "$entry" ] && entry_kind="rm-dir"
+    local entry_bytes
+    entry_bytes=$(sweep_size_bytes "$entry")
     if [ "$dry_run" = "1" ]; then
       _SW_COUNT=$((_SW_COUNT + 1))
+      _sw_emit_target "would" "$entry_kind" "$entry" "$entry_bytes" "in $path"
       continue
     fi
     err=$(rm -rf -- "$entry" 2>&1); rc=$?
     if [ "$rc" -eq 0 ]; then
       _SW_COUNT=$((_SW_COUNT + 1))
+      _sw_emit_target "removed" "$entry_kind" "$entry" "$entry_bytes" "in $path"
     else
-      _sw_add_lock "$entry" "$(_sw_classify_err "$err")"
+      local lock_reason
+      lock_reason=$(_sw_classify_err "$err")
+      _sw_add_lock "$entry" "$lock_reason"
+      _sw_emit_target "failed" "$entry_kind" "$entry" 0 "$lock_reason"
     fi
   done < <(find "${find_args[@]}" -print0 2>/dev/null)
 
