@@ -491,5 +491,5 @@ case "${1:-install}" in
   list-backups)  verb_list_backups ;;
   repair)        shift || true; verb_repair "$@" ;;
   uninstall)     verb_uninstall ;;
-  *) log_err "[62] Unknown verb: $1 (expected install|check|strip|restore|list-backups|repair|uninstall)"; exit 2 ;;
+  *) log_err "[62] Unknown verb: $1 (expected install|check|strip|restore|list-backups|repair|uninstall) -- pass --yes/--no-prompt to skip prompts"; exit 2 ;;
 esac
