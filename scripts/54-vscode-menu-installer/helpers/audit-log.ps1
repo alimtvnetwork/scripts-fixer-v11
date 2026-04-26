@@ -305,6 +305,7 @@ function Get-RegistryAuditSummary {
                     regPath = $rec.regPath
                     edition = $rec.edition
                     target  = $rec.target
+                    scope   = $(if ($rec.PSObject.Properties.Name -contains 'scope') { $rec.scope } else { $script:AuditScope })
                     values  = $(if ($rec.PSObject.Properties.Name -contains 'values') { $rec.values } else { $null })
                 }
             }
@@ -313,6 +314,7 @@ function Get-RegistryAuditSummary {
                     regPath = $rec.regPath
                     edition = $rec.edition
                     target  = $rec.target
+                    scope   = $(if ($rec.PSObject.Properties.Name -contains 'scope') { $rec.scope } else { $script:AuditScope })
                 }
             }
             'skip-absent' {
@@ -320,6 +322,7 @@ function Get-RegistryAuditSummary {
                     regPath = $rec.regPath
                     edition = $rec.edition
                     target  = $rec.target
+                    scope   = $(if ($rec.PSObject.Properties.Name -contains 'scope') { $rec.scope } else { $script:AuditScope })
                 }
             }
             'fail' {
@@ -327,6 +330,7 @@ function Get-RegistryAuditSummary {
                     regPath = $rec.regPath
                     edition = $rec.edition
                     target  = $rec.target
+                    scope   = $(if ($rec.PSObject.Properties.Name -contains 'scope') { $rec.scope } else { $script:AuditScope })
                     reason  = $(if ($rec.PSObject.Properties.Name -contains 'reason') { $rec.reason } else { $null })
                 }
             }
