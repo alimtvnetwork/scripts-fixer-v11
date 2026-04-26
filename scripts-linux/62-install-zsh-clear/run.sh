@@ -33,9 +33,155 @@ CFG_REMOVE_OMZ=$(jq -r         '.aggressive.remove_oh_my_zsh_dir'  "$CONFIG")
 CFG_REMOVE_PKG=$(jq -r         '.aggressive.remove_apt_zsh_pkg'    "$CONFIG")
 CFG_RESTORE_SHELL_FLAG=$(jq -r '.aggressive.restore_default_shell' "$CONFIG")
 CFG_RESTORE_SHELL_PATH=$(jq -r '.aggressive.restore_shell_path'    "$CONFIG")
+CFG_INTERACTIVE=$(jq -r        '.interactive_by_default // true'   "$CONFIG")
 
 # ---------- helpers ----------
 ts_now() { date '+%Y%m%d-%H%M%S'; }
+
+# Human-readable file size (delegates to numfmt if available).
+_human_size() {
+  local bytes="${1:-0}"
+  if command -v numfmt >/dev/null 2>&1; then
+    numfmt --to=iec --suffix=B --padding=7 "$bytes" 2>/dev/null || echo "${bytes}B"
+  else
+    echo "${bytes}B"
+  fi
+}
+
+# Print a one-line summary of a single file ($1 = path, $2 = label width).
+_describe_file_row() {
+  local path="$1" label_w="${2:-22}"
+  local rel="${path##*/}"
+  if [ ! -e "$path" ]; then
+    printf "    %-${label_w}s  (missing)\n" "$rel"
+    return
+  fi
+  local size mtime lines
+  size=$(stat -c '%s' "$path" 2>/dev/null || echo 0)
+  mtime=$(stat -c '%y' "$path" 2>/dev/null | cut -d. -f1)
+  if [ -f "$path" ]; then
+    lines=$(wc -l < "$path" 2>/dev/null || echo 0)
+    printf "    %-${label_w}s  %8s  %5s lines  %s\n" \
+      "$rel" "$(_human_size "$size")" "$lines" "$mtime"
+  else
+    printf "    %-${label_w}s  (dir)              %s\n" "$rel" "$mtime"
+  fi
+}
+
+# Pretty-print the contents of a backup directory (or current ~/.zshrc).
+# $1 = label, $2 = directory (or single file path).
+describe_backup_dir() {
+  local label="$1" target="$2"
+  printf "  %s\n" "$label"
+  if [ -z "$target" ] || [ ! -e "$target" ]; then
+    printf "    (path does not exist: %s)\n" "$target"
+    return
+  fi
+  if [ -f "$target" ]; then
+    _describe_file_row "$target"
+    return
+  fi
+  # Directory: walk its top-level entries (1 level deep is enough for our backups).
+  local found=0 entry
+  # Show .zshrc first, then any other entries
+  if [ -f "$target/.zshrc" ]; then
+    _describe_file_row "$target/.zshrc"; found=1
+  fi
+  while IFS= read -r entry; do
+    [ "$entry" = ".zshrc" ] && continue
+    _describe_file_row "$target/$entry"; found=1
+  done < <(ls -A "$target" 2>/dev/null)
+  if [ "$found" = "0" ]; then
+    printf "    (empty directory)\n"
+  fi
+  # First non-blank line preview from .zshrc
+  if [ -f "$target/.zshrc" ]; then
+    local first
+    first=$(grep -m1 -v '^[[:space:]]*$' "$target/.zshrc" 2>/dev/null | cut -c1-72)
+    [ -n "$first" ] && printf "    first non-blank: %s\n" "$first"
+  fi
+}
+
+# Show side-by-side summary of CURRENT ~/.zshrc vs SELECTED backup.
+show_restore_choice() {
+  local backup_dir="$1"
+  echo
+  echo "============================================================="
+  echo " Restore choice"
+  echo "============================================================="
+  describe_backup_dir "Current ~/.zshrc:" "$ZSHRC"
+  echo
+  describe_backup_dir "Selected backup ($backup_dir):" "$backup_dir"
+  echo "============================================================="
+}
+
+# Read a single key from /dev/tty so we still work when stdout is piped.
+# $1 = prompt, $2 = default char. Echoes the chosen char (lowercase).
+_read_choice() {
+  local prompt="$1" default="${2:-r}" reply=""
+  if [ -r /dev/tty ]; then
+    printf "%s " "$prompt" > /dev/tty
+    IFS= read -r reply < /dev/tty || reply=""
+  fi
+  reply="${reply:-$default}"
+  printf '%s' "${reply:0:1}" | tr '[:upper:]' '[:lower:]'
+}
+
+# True iff stdin is a terminal AND interactive mode is enabled.
+_is_interactive() {
+  [ "${ASSUME_YES:-0}" = "1" ] && return 1
+  [ "${NO_PROMPT:-0}" = "1" ] && return 1
+  [ "$CFG_INTERACTIVE" = "true" ] || return 1
+  [ -t 0 ] || [ -r /dev/tty ]
+}
+
+# Show a small diff between two files using the best available tool.
+_show_diff() {
+  local a="$1" b="$2"
+  if command -v diff >/dev/null 2>&1; then
+    diff -u --label "current" --label "backup" "$a" "$b" || true
+  elif command -v git >/dev/null 2>&1; then
+    git --no-pager diff --no-index --no-color -- "$a" "$b" || true
+  else
+    echo "(no diff/git available -- showing both files instead)"
+    echo "--- current ---"; cat "$a"
+    echo "--- backup  ---"; cat "$b"
+  fi
+}
+
+# Prompt the user. Returns one of: restore | keep | abort.
+# Loops on [d]iff. Honors --yes (always restore) and --no-prompt (always keep).
+prompt_restore_decision() {
+  local backup_dir="$1"
+  if [ "${ASSUME_YES:-0}" = "1" ]; then
+    log_info "[62] --yes -> restoring without prompt"; echo restore; return
+  fi
+  if [ "${NO_PROMPT:-0}" = "1" ]; then
+    log_info "[62] --no-prompt -> keeping current ~/.zshrc"; echo keep; return
+  fi
+  if ! _is_interactive; then
+    log_info "[62] non-interactive shell -> defaulting to RESTORE (use --no-prompt to keep instead)"
+    echo restore; return
+  fi
+  show_restore_choice "$backup_dir" >&2
+  local choice
+  while true; do
+    choice=$(_read_choice "[62] [R]estore from backup / [K]eep current / [D]iff / [A]bort? (default R):" r)
+    case "$choice" in
+      r|"") echo restore; return ;;
+      k)    echo keep;    return ;;
+      a)    echo abort;   return ;;
+      d)
+        if [ -f "$ZSHRC" ] && [ -f "$backup_dir/.zshrc" ]; then
+          _show_diff "$ZSHRC" "$backup_dir/.zshrc" >&2
+        else
+          echo "[62] cannot diff: missing $ZSHRC or $backup_dir/.zshrc" >&2
+        fi
+        ;;
+      *) echo "[62] unrecognized choice '$choice' -- try R/K/D/A" >&2 ;;
+    esac
+  done
+}
 
 # Pre-clear safety backup -- ALWAYS lands in $BACKUP_ROOT/pre-clear-<TS>/
 pre_clear_backup() {
@@ -44,8 +190,19 @@ pre_clear_backup() {
   ts=$(ts_now)
   dest="$BACKUP_ROOT/pre-clear-$ts"
   mkdir -p "$dest" || { log_file_error "$dest" "cannot create pre-clear backup dir"; return 1; }
+  local backed_files=()
   if [ -f "$ZSHRC" ]; then
-    cp -p "$ZSHRC" "$dest/.zshrc" && log_info "[62] Pre-clear safety backup: $ZSHRC -> $dest/.zshrc"
+    if cp -p "$ZSHRC" "$dest/.zshrc"; then
+      log_info "[62] Pre-clear safety backup: $ZSHRC -> $dest/.zshrc"
+      backed_files+=(".zshrc")
+    fi
+  fi
+  # User-visible manifest of what we just backed up
+  if [ ${#backed_files[@]} -gt 0 ]; then
+    {
+      echo "  Pre-clear safety backup created at $dest"
+      describe_backup_dir "  Contents:" "$dest"
+    } >&2
   fi
   echo "$dest"
 }
