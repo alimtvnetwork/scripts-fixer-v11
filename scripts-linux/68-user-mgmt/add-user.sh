@@ -40,6 +40,20 @@ Optional:
   --sudo                       add to sudo group (Linux: 'sudo', macOS: 'admin')
   --system                     create system account (Linux only; ignored on macOS)
   --dry-run                    print what would happen, change nothing
+
+SSH authorized_keys (repeatable; both flags may be combined):
+  --ssh-key "<key-line>"       Inline OpenSSH public key (entire single line,
+                               e.g. "ssh-ed25519 AAAA... user\@host"). Adds
+                               one authorized key. Pass the flag multiple
+                               times for multiple keys.
+  --ssh-key-file <path>        Read one OR many keys from a local file (one
+                               key per line; blanks + '#' comments ignored).
+                               Pass the flag multiple times for multiple files.
+                               Installed to <home>/.ssh/authorized_keys with
+                               mode 0600 (dir 0700) and owner=<name>:<pgroup>.
+                               Existing entries are preserved; duplicates are
+                               de-duplicated. Key contents are NEVER logged --
+                               only a SHA-256 fingerprint + source.
 EOF
 }
 
@@ -56,6 +70,9 @@ UM_COMMENT=""
 UM_SUDO=0
 UM_SYSTEM=0
 UM_DRY_RUN="${UM_DRY_RUN:-0}"
+# SSH keys -- two parallel arrays, each entry processed in order.
+UM_SSH_KEYS=()        # inline key lines
+UM_SSH_KEY_FILES=()   # file paths
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -71,6 +88,8 @@ while [ $# -gt 0 ]; do
     --sudo)            UM_SUDO=1; shift ;;
     --system)          UM_SYSTEM=1; shift ;;
     --dry-run)         UM_DRY_RUN=1; shift ;;
+    --ssh-key)         UM_SSH_KEYS+=("${2:-}"); shift 2 ;;
+    --ssh-key-file)    UM_SSH_KEY_FILES+=("${2:-}"); shift 2 ;;
     --) shift; break ;;
     -*)
       log_err "unknown option: '$1' (failure: see --help)"
