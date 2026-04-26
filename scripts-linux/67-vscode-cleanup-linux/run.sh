@@ -482,6 +482,20 @@ else
   verify_render "$VERIFY_TSV" "vscode-cleanup-linux verification report"
 fi
 
+# --------------------------------------------------------------------- ctx-menu verify
+# Independent scan of every desktop-entry / MIME-handler / file-manager
+# scripts surface that VS Code can hook into. Runs in BOTH apply and
+# dry-run modes (it's read-only) and even when no methods were detected,
+# so the operator gets a definitive "context-menu entries gone?" verdict.
+VERIFY_CTX_PASSES=0; VERIFY_CTX_FAILS=0; VERIFY_CTX_SKIPS=0
+if [ "$APPLY_ABORTED" = "1" ]; then
+  log_info "===== context-menu verify skipped (run aborted at confirmation prompt) ====="
+else
+  log_info "===== context-menu / MIME surface scan (independent, read-only) ====="
+  verify_context_menu_run
+  verify_context_menu_render "$VERIFY_CTX_TSV" "vscode-cleanup-linux context-menu / MIME report"
+fi
+
 # --------------------------------------------------------------------- manifest
 _mode_label() {
   if [ "$APPLY_ABORTED" = "1" ]; then echo "aborted"
