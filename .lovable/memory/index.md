@@ -34,3 +34,4 @@ OneNote install (`onenote` keyword) must do ONLY OneNote. OneDrive disable lives
 - [Profile install locations](mem://features/02-profile-install-locations) — Per-profile install location matrix (C:\ system vs E:\dev-tool); README + spec + config.json must stay in sync
 - [Remote runner](mem://features/remote-runner) — Script 63: multi-host SSH executor with password/key, group targets, parallel mode, auto chmod 600 + .gitignore
 - [Bash shared helpers](mem://features/shared-helpers-bash) — Inventory of scripts-linux/_shared/ helpers including ported aria2c-download, apt-install, path-utils with upstream provenance and naming aliases
+- [Remote runner logs](mem://features/remote-runner-logs) — Script 63: per-run dir with session.log, manifest.json, hosts/<name>.{log,meta.json}, latest symlink, retain_runs retention, 'logs' verb
