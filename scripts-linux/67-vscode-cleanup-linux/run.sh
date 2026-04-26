@@ -366,10 +366,15 @@ printf '  TOTALS: removed=%d  would-remove=%d  missing=%d  skipped=%d  failed=%d
   "$REMOVED" "$WOULD" "$MISSING" "$SKIPPED" "$FAILED"
 
 # --------------------------------------------------------------------- manifest
+_mode_label() {
+  if [ "$APPLY_ABORTED" = "1" ]; then echo "aborted"
+  elif [ "$DRY_RUN" -eq 1 ]; then echo "dry-run"
+  else echo "apply"; fi
+}
 manifest="$RUN_DIR/manifest.json"
 {
   printf '{"script":"67-vscode-cleanup-linux","os":"Linux","mode":"%s","scope":"%s","timestamp":"%s","detected":[' \
-    "$([ "$DRY_RUN" -eq 1 ] && echo dry-run || echo apply)" "$RESOLVED_SCOPE" "$TS"
+    "$(_mode_label)" "$RESOLVED_SCOPE" "$TS"
   first=1
   for m in "${DETECTED_METHODS[@]}"; do
     [ "$first" -eq 1 ] || printf ','
@@ -392,6 +397,10 @@ manifest="$RUN_DIR/manifest.json"
   || log_file_error "$manifest" "manifest write failed"
 
 log_info "Manifest written: $manifest"
+if [ "$APPLY_ABORTED" = "1" ]; then
+  log_warn "Run aborted by operator at the confirmation prompt. No changes were made."
+  exit 2
+fi
 if [ "$FAILED" -gt 0 ]; then
   log_warn "Completed with $FAILED failure(s). See manifest for details."
   exit 1
