@@ -95,7 +95,7 @@ try {
     $runScript = Join-Path $root 'run.ps1'
     $out = & $runScript -Help 2>&1
     $joined = ($out | Out-String)
-    if ($joined -match 'reregister' -and $joined -match 'COMMANDS') {
+    if ($joined -match 'reregister' -and $joined -match '(?i)commands') {
         _ok "help verb dispatches"
     } else {
         _no "help verb dispatches" ("output did not include verbs/commands: " + ($joined.Substring(0, [Math]::Min(200, $joined.Length))))
