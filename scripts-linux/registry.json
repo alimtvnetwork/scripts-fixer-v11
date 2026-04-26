@@ -1,5 +1,5 @@
 {
-  "version": "0.137.0",
+  "version": "0.138.0",
   "description": "Linux installer registry. Mirrors Windows numbering. Windows-only scripts intentionally absent.",
   "scripts": [
     {
@@ -265,6 +265,12 @@
       "folder": "66-vscode-menu-cleanup-mac",
       "phase": "12",
       "title": "macOS VS Code 'context-menu' cleanup (Services workflows, LaunchAgents/Daemons, Login Items, code/code-insiders shims, vscode:// URL handlers)"
+    },
+    {
+      "id": "67",
+      "folder": "67-vscode-cleanup-linux",
+      "phase": "12",
+      "title": "Linux/Ubuntu VS Code uninstaller (detects apt|snap|deb|tarball|user-config and removes only matching artifacts)"
     }
   ]
 }
