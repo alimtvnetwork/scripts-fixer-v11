@@ -118,6 +118,35 @@ while [ "$i" -lt "$count" ]; do
   [ "$is_sys"  = "1" ] && args+=(--system)
   [ "$UM_DRY_RUN" = "1" ] && args+=(--dry-run)
 
+  # SSH keys (added in v0.140.0 alongside the root add-user shortcut).
+  # Two arrays per record:
+  #   sshKeys      : array of inline OpenSSH public-key strings
+  #   sshKeyFiles  : array of paths to .pub files on this host
+  # Both are optional. Both fan out to repeatable --ssh-key / --ssh-key-file
+  # flags. Empty arrays are no-ops (same as omitting the field entirely).
+  if jq -e 'has("sshKeys") and (.sshKeys|type=="array")' <<< "$rec" >/dev/null 2>&1; then
+    n=$(jq '.sshKeys | length' <<< "$rec")
+    j=0
+    while [ "$j" -lt "$n" ]; do
+      kv=$(jq -r ".sshKeys[$j]" <<< "$rec")
+      if [ -n "$kv" ] && [ "$kv" != "null" ]; then
+        args+=(--ssh-key "$kv")
+      fi
+      j=$((j+1))
+    done
+  fi
+  if jq -e 'has("sshKeyFiles") and (.sshKeyFiles|type=="array")' <<< "$rec" >/dev/null 2>&1; then
+    n=$(jq '.sshKeyFiles | length' <<< "$rec")
+    j=0
+    while [ "$j" -lt "$n" ]; do
+      fv=$(jq -r ".sshKeyFiles[$j]" <<< "$rec")
+      if [ -n "$fv" ] && [ "$fv" != "null" ]; then
+        args+=(--ssh-key-file "$fv")
+      fi
+      j=$((j+1))
+    done
+  fi
+
   log_info "--- record $((i+1))/$count: user='$name' ---"
   if ! bash "$SCRIPT_DIR/add-user.sh" "${args[@]}"; then
     rc_total=1
