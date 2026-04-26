@@ -100,24 +100,23 @@ echo "--- dry-run ---"
 bash "$SCRIPT_ROOT/run.sh" --dry-run --scope user --no-color > "$SANDBOX/dry.out" 2>&1
 RC_DRY=$?
 
-echo "--- apply ---"
-bash "$SCRIPT_ROOT/run.sh"           --scope user --no-color > "$SANDBOX/apply.out" 2>&1
-RC_APPLY=$?
-
-# --- assertions ----------------------------------------------------------
+# Dry-run assertions BEFORE the apply run (dry-run must not touch anything).
 pass=0; fail=0
 _assert() {
   local label="$1"; local cond="$2"
   if [ "$cond" -eq 0 ]; then echo "  PASS $label"; pass=$((pass+1));
   else echo "  FAIL $label"; fail=$((fail+1)); fi
 }
-
-# Dry-run: must not delete anything.
 [ -d "$FAKE_HOME/Library/Services/Open with Code.workflow" ]; _assert "dry-run kept Services workflow on disk" $?
 [ -f "$FAKE_HOME/Library/LaunchAgents/com.example.vscode-keepalive.plist" ]; _assert "dry-run kept LaunchAgent plist on disk" $?
 [ -x "$FAKE_HOME/.local/bin/code" ]; _assert "dry-run kept user shim on disk" $?
 [ "$RC_DRY" -eq 0 ]; _assert "dry-run exit code = 0" $?
 
+echo "--- apply ---"
+bash "$SCRIPT_ROOT/run.sh"           --scope user --no-color > "$SANDBOX/apply.out" 2>&1
+RC_APPLY=$?
+
+# --- assertions ----------------------------------------------------------
 # Apply: VS Code targets gone, decoys preserved.
 [ ! -e "$FAKE_HOME/Library/Services/Open with Code.workflow" ]; _assert "apply removed Services workflow" $?
 [   -d "$FAKE_HOME/Library/Services/Other Tool.workflow"      ]; _assert "apply preserved unrelated workflow" $?
