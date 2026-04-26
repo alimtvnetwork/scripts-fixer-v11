@@ -345,6 +345,40 @@ switch ($normalizedAction) {
         & (Join-Path $scriptDir "helpers\startup-remove.ps1") @Rest
         exit $LASTEXITCODE
     }
+    { $_ -in @("clean-vscode-mac", "clean-vscode-macos", "vscode-mac-clean") } {
+        # macOS-only surgical cleanup of VS Code integration surfaces
+        # (Services, code CLI symlink, LaunchServices, login items +
+        # LaunchAgents). Implemented in bash so it runs on a vanilla
+        # macOS without requiring pwsh.
+        $macHelper = Join-Path $scriptDir "helpers\mac\clean-vscode-mac.sh"
+        $isMissing = -not (Test-Path -LiteralPath $macHelper)
+        if ($isMissing) {
+            Write-Host ""
+            Write-Host "  [ FAIL ] " -ForegroundColor Red -NoNewline
+            Write-Host "Helper not found at: $macHelper (failure: bash script missing from repo)"
+            exit 2
+        }
+        # Refuse cleanly on non-macOS so Windows users see actionable text
+        # instead of a confusing 'bash: not recognized' error. PowerShell
+        # 5.1 lacks $IsMacOS -- treat 'not Linux + not Mac' as Windows.
+        $isMac = ($PSVersionTable.PSVersion.Major -ge 6) -and (Get-Variable -Name IsMacOS -ErrorAction SilentlyContinue) -and $IsMacOS
+        if (-not $isMac) {
+            Write-Host ""
+            Write-Host "  [ FAIL ] " -ForegroundColor Red -NoNewline
+            Write-Host "'clean-vscode-mac' is macOS-only (failure: current OS is not Darwin)."
+            Write-Host "          For Windows, use:  .\run.ps1 -I 54 uninstall  (script-54 vscode-menu-installer)" -ForegroundColor Gray
+            exit 2
+        }
+        $bash = (Get-Command bash -ErrorAction SilentlyContinue)
+        if (-not $bash) {
+            Write-Host ""
+            Write-Host "  [ FAIL ] " -ForegroundColor Red -NoNewline
+            Write-Host "bash not found on PATH (failure: required to run $macHelper)."
+            exit 2
+        }
+        & $bash.Source $macHelper @Rest
+        exit $LASTEXITCODE
+    }
     { $_ -in @("help", "--help", "-h", "") } {
         Show-OsHelp
         exit 0
