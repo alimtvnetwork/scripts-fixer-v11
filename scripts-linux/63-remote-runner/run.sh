@@ -317,8 +317,19 @@ run_on_host() {
 
   local target_user_host="$h_user@$h_host"
   local t0 t1 dur rc=0 out
+  local host_log=""
+  if [ -n "$RUN_HOSTS_DIR" ]; then
+    host_log="$RUN_HOSTS_DIR/$(__safe_token "$h_name").log"
+    {
+      echo "# Host:    $h_name ($h_user@$h_host:$h_port  auth=$h_auth)"
+      echo "# Command: $cmd"
+      echo "# Started: $(date '+%Y-%m-%d %H:%M:%S')"
+      echo "# ---"
+    } > "$host_log"
+  fi
 
   log_info "[63] [$h_name] >>> $cmd"
+  __session_append "[$(date '+%H:%M:%S')] [$h_name] >>> $cmd"
   t0=$(date +%s)
 
   case "$h_auth" in
@@ -342,14 +353,35 @@ run_on_host() {
 
   t1=$(date +%s); dur=$((t1 - t0))
 
-  # Log full output to session log (one block per host)
-  if [ -n "$SESSION_LOG" ]; then
+  # Per-host raw log (full stdout+stderr, no host-prefix munging)
+  if [ -n "$host_log" ]; then
+    {
+      printf '%s\n' "$out"
+      echo ""
+      echo "# ---"
+      echo "# Finished: $(date '+%Y-%m-%d %H:%M:%S')"
+      echo "# Exit:     $rc"
+      echo "# Duration: ${dur}s"
+    } >> "$host_log"
+  fi
+
+  # Combined session log (one host block, chronological)
+  if [ -n "$RUN_SESSION_LOG" ]; then
     {
       echo ""
       echo "## [$h_name] exit=$rc dur=${dur}s"
       printf '%s\n' "$out"
-    } >> "$SESSION_LOG"
+    } >> "$RUN_SESSION_LOG"
   fi
+
+  # Map exit code -> status string for the meta JSON
+  local status="fail"
+  case "$rc" in
+    0)   status="ok" ;;
+    5)   status="auth_fail" ;;
+    255) status="unreachable" ;;
+  esac
+  __write_host_meta "$h_name" "$rc" "$dur" "$t0" "$t1" "$status"
 
   # Echo command output to console (indented)
   printf '%s\n' "$out" | sed "s/^/    [$h_name] /"
