@@ -27,19 +27,19 @@ out=$(tf_run list --format=csv 2>/dev/null)
 assert_contains 'method,name,path,status,scope' "$out" "--format=csv works"
 
 # 3. --output writes CSV to file (parent dirs created on demand).
-csv_path="$TF_TMP/exports/inventory.csv"
+csv_path="$TF_HOME/exports/inventory.csv"
 tf_run list --csv --output "$csv_path" >/dev/null 2>&1; rc=$?
 assert_exit 0 "$rc" "list --csv --output exits 0"
-assert_file_exists "$csv_path" "csv file created"
+assert_file "$csv_path" "csv file created"
 csv_body=$(cat "$csv_path")
 assert_contains 'method,name,path,status,scope' "$csv_body" "csv file: header"
 assert_contains 'autostart,a,'   "$csv_body" "csv file: autostart row"
 
 # 4. --output writes JSON to file with the new status field.
-json_path="$TF_TMP/exports/inventory.json"
+json_path="$TF_HOME/exports/inventory.json"
 tf_run list --json --output "$json_path" >/dev/null 2>&1; rc=$?
 assert_exit 0 "$rc" "list --json --output exits 0"
-assert_file_exists "$json_path" "json file created"
+assert_file "$json_path" "json file created"
 json_body=$(cat "$json_path")
 assert_contains '"count": 3'         "$json_body" "json file: count=3"
 assert_contains '"status": "active"' "$json_body" "json file: status field"
@@ -55,9 +55,9 @@ print(",".join(statuses), "|", ",".join(keys))
 fi
 
 # 5. Combine --output with --method to scope the export.
-autostart_csv="$TF_TMP/autostart.csv"
+autostart_csv="$TF_HOME/autostart.csv"
 tf_run list --csv --method autostart --output "$autostart_csv" >/dev/null 2>&1
-assert_file_exists "$autostart_csv" "scoped csv file created"
+assert_file "$autostart_csv" "scoped csv file created"
 body=$(cat "$autostart_csv")
 assert_contains 'autostart,a,'  "$body" "scoped csv: autostart row"
 assert_not_contains 'shell-rc'  "$body" "scoped csv: shell-rc rows excluded"
@@ -71,9 +71,9 @@ out=$(tf_run list --csv --method autostart 2>/dev/null)
 assert_not_contains ',a,' "$out" "deleted autostart no longer listed"
 
 # 7. table --output writes the table to file too.
-table_path="$TF_TMP/inv.txt"
+table_path="$TF_HOME/inv.txt"
 tf_run list --output "$table_path" >/dev/null 2>&1
-assert_file_exists "$table_path" "table file created"
+assert_file "$table_path" "table file created"
 assert_contains 'METHOD'  "$(cat "$table_path")" "table file: header"
 assert_contains 'STATUS'  "$(cat "$table_path")" "table file: status column"
 
