@@ -1,0 +1,31 @@
+{
+  "_comment": "Script 56 -- VS Code folder context-menu re-registration. Standalone counterpart to Script 10. Re-creates ONLY the directory + background HKCR\\Directory\\shell\\<Name> entries (never the file-target HKCR\\*\\shell\\<Name>) and auto-removes them when Code.exe for that edition is no longer on disk.",
+  "enabled": true,
+  "autoRemoveWhenMissing": true,
+  "installationType": "user",
+  "enabledEditions": ["stable", "insiders"],
+  "editions": {
+    "stable": {
+      "vscodePath": {
+        "user":   "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe",
+        "system": "C:\\Program Files\\Microsoft VS Code\\Code.exe"
+      },
+      "registryPaths": {
+        "directory":  "Registry::HKEY_CLASSES_ROOT\\Directory\\shell\\VSCode",
+        "background": "Registry::HKEY_CLASSES_ROOT\\Directory\\Background\\shell\\VSCode"
+      },
+      "contextMenuLabel": "Open with Code"
+    },
+    "insiders": {
+      "vscodePath": {
+        "user":   "%LOCALAPPDATA%\\Programs\\Microsoft VS Code Insiders\\Code - Insiders.exe",
+        "system": "C:\\Program Files\\Microsoft VS Code Insiders\\Code - Insiders.exe"
+      },
+      "registryPaths": {
+        "directory":  "Registry::HKEY_CLASSES_ROOT\\Directory\\shell\\VSCodeInsiders",
+        "background": "Registry::HKEY_CLASSES_ROOT\\Directory\\Background\\shell\\VSCodeInsiders"
+      },
+      "contextMenuLabel": "Open with Code - Insiders"
+    }
+  }
+}
