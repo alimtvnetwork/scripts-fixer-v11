@@ -60,7 +60,8 @@ assert_eq "trunk" "$(git config --global --get init.defaultBranch)" "preserves u
 # 4. --dry-run should not mutate config.
 : > "$GIT_CONFIG_GLOBAL"
 GCD_DRYRUN=0 apply_default_git_config --dry-run >/dev/null 2>&1
-lines=$(grep -c . "$GIT_CONFIG_GLOBAL" 2>/dev/null || echo 0)
+# Count non-empty lines without grep's exit-1-on-no-match perturbing the value.
+lines=$(awk 'NF{c++} END{print c+0}' "$GIT_CONFIG_GLOBAL")
 assert_eq "0" "$lines" "dry-run did not write to .gitconfig"
 
 # 5. Custom config path with extra safe.directory entries via --add.
