@@ -78,6 +78,10 @@ try {
     $resolvedScope = Resolve-MenuScope -Requested $Scope -IsAdmin $isAdmin
     Write-Log ("Resolved scope: requested='" + $Scope + "', resolved='" + $resolvedScope + "'") -Level "info"
 
+    # Late-bind the resolved scope into the audit log so every event line
+    # AND the change-report banner show which hive was actually touched.
+    Set-RegistryAuditScope -Scope $resolvedScope
+
     # Fail fast: AllUsers explicitly requested but caller is NOT elevated.
     $isAllUsersRequested = ($Scope -ieq 'AllUsers' -or $Scope -ieq 'Machine' -or $Scope -ieq 'HKLM')
     if ($isAllUsersRequested -and -not $isAdmin) {
