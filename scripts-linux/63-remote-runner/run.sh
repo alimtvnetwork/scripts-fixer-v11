@@ -330,7 +330,16 @@ verb_check() {
   for name in $hosts; do
     local rec; rec=$(host_record "$name")
     [ "$rec" = "MISSING" ] && { log_err "[63] [$name] not in config"; bad=$((bad+1)); continue; }
-    IFS=$'\t' read -r _ h_host _ h_port _ _ _ h_to <<<"$rec"
+    local _x h_host h_port h_to
+    { IFS= read -r _x        # name
+      IFS= read -r h_host
+      IFS= read -r _x        # user
+      IFS= read -r h_port
+      IFS= read -r _x        # auth
+      IFS= read -r _x        # password
+      IFS= read -r _x        # identity
+      IFS= read -r h_to
+    } <<<"$rec"
     if timeout "$h_to" bash -c "</dev/tcp/$h_host/$h_port" 2>/dev/null; then
       log_ok "[63] [$name] reachable ($h_host:$h_port)"
       ok=$((ok+1))
