@@ -32,6 +32,14 @@ _xml_escape() {
   printf '%s' "$s"
 }
 
+# Note: the bash parameter-expansion form above is correct in isolation, but it
+# proved fragile inside command substitution + heredoc nesting on some bash
+# builds (the `<`/`>` bytes confused the lexer in a printf context). Re-export
+# via sed for unambiguous behaviour.
+_xml_escape() {
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
 # ---- 1) LaunchAgent plist ----
 write_launchagent_plist() {
   local name="$1" path="$2" args="${3:-}"
