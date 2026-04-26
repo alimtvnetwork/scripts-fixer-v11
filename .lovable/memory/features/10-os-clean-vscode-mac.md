@@ -93,3 +93,28 @@ point of detection is that the user asked for a tool that will not
 delete unrelated items.
 
 Built: v0.134.0.
+
+### Post-cleanup verification (v0.135.0)
+After the apply phase the script runs a VERIFY pass that re-invokes the
+SAME planners (`plan_services`, `plan_code_cli`, `plan_loginitems`)
+against the live system and reports anything still present.
+
+- **services / code-cli / loginitems**: re-plan; any returned target is
+  printed under `! <abs path>` and recorded as a `remaining` audit event.
+- **launchservices**: special-cased -- `lsregister -u` removes registrations
+  but leaves Code.app on disk. Verifier reads each verified bundle's
+  `CFBundleIdentifier` and greps `lsregister -dump` output for either the
+  id or the bundle path. Match -> reported as still registered.
+  If `lsregister` is missing/non-executable -> reported as `UNKNOWN`
+  (with exact path + reason); never silent.
+- Surfaces not selected for this run print `(skipped -- surface not selected)`.
+- Exit code rules:
+  - `remaining > 0` -> exit 3 (same code as `failed > 0`)
+  - `verify_unknown > 0` only -> exit 0 with a loud `[WARN]`
+  - both 0 -> exit 0
+- Summary block now includes `remaining (post-cleanup verify)` and
+  `verify-unknown` rows.
+- Audit log gains `verify-end` (`remaining=N unknown=N`) and one
+  `remaining` event per leftover (`reason=post-cleanup re-check found this entry`).
+
+Built: v0.135.0.
