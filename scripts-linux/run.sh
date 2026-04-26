@@ -78,6 +78,16 @@ while [ $# -gt 0 ]; do
         VERB="wp-passthrough"; WP_SUB="install"; WP_COMP=""; shift; WP_REST=("$@"); break ;;
     wp-only)
         VERB="wp-passthrough"; WP_SUB="install"; WP_COMP="wp-only"; shift; WP_REST=("$@"); break ;;
+    # ---- top-level shortcuts to script 68 (group creation) ----
+    # Two separate shell scripts in 68-user-mgmt/ that the root orchestrator
+    # exposes directly so users don't need to remember the folder path:
+    #   ./run.sh add-group <name> [--gid N] [--system] [--dry-run]
+    #   ./run.sh add-groups-from-json <file.json> [--dry-run]
+    # Aliases provided for natural ordering:  group-add / groups-from-json.
+    add-group|group-add)
+        VERB="grp-passthrough"; GRP_SUB="cli";  shift; GRP_REST=("$@"); break ;;
+    add-groups-from-json|groups-from-json|add-group-from-json|group-from-json)
+        VERB="grp-passthrough"; GRP_SUB="json"; shift; GRP_REST=("$@"); break ;;
     *)
         # `./run.sh install wordpress [args]` lands here AFTER install was consumed.
         # Re-route it through the wp passthrough so the user-friendly form works.
@@ -172,6 +182,19 @@ Ubuntu WordPress installer (script 70 shortcuts; Ubuntu/Debian only):
   install wp                   Alias of 'install wordpress'
   install wp-only              Only the WordPress component (assumes prereqs)
   uninstall wordpress          Remove WordPress + nginx vhost (keeps PHP / MySQL)
+
+Group management (script 68 shortcuts; Linux + macOS):
+  add-group <name> [opts]      Create one local group via direct CLI args
+      --gid N                  Pin numeric GID (auto-assigned if omitted)
+      --system                 System group (Linux only; ignored on macOS)
+      --dry-run                Print what would happen, change nothing
+      Aliases: group-add
+  add-groups-from-json <file>  Bulk-create groups from a JSON file. Accepts:
+                                 single object  : { "name": "devs", "gid": 2000 }
+                                 array          : [ { ... }, { ... } ]
+                                 wrapped object : { "groups": [ ... ] }
+      --dry-run                Preview every record, change nothing
+      Aliases: groups-from-json, add-group-from-json
 
 Flags:
   -I <id>              Restrict to a single script id
@@ -328,6 +351,30 @@ case "${VERB:-help}" in
     else
       bash "$ROOT/70-install-wordpress-ubuntu/run.sh" "$WP_SUB" "${_wp_filtered[@]}"
     fi
+    ;;
+  grp-passthrough)
+    # Filter empties (some bash versions add a stray "" when "$@" was empty
+    # at capture time -- same dance as vsclin/wp passthroughs above).
+    _grp_filtered=()
+    for _a in "${GRP_REST[@]:-}"; do [ -n "$_a" ] && _grp_filtered+=("$_a"); done
+    case "$GRP_SUB" in
+      cli)
+        if [ "${#_grp_filtered[@]}" -gt 0 ]; then
+          bash "$ROOT/68-user-mgmt/add-group.sh" "${_grp_filtered[@]}"
+        else
+          bash "$ROOT/68-user-mgmt/add-group.sh"
+        fi
+        ;;
+      json)
+        if [ "${#_grp_filtered[@]}" -gt 0 ]; then
+          bash "$ROOT/68-user-mgmt/add-group-from-json.sh" "${_grp_filtered[@]}"
+        else
+          bash "$ROOT/68-user-mgmt/add-group-from-json.sh"
+        fi
+        ;;
+      *)
+        log_err "internal: unknown grp sub '$GRP_SUB'"; exit 64 ;;
+    esac
     ;;
   install|check|repair|uninstall)
     if [ -n "$ONLY_ID" ]; then
