@@ -248,17 +248,26 @@ cmd_remove() {
     log_file_error "$SCRIPT_DIR/helpers/enumerate.sh" "remove_startup_entry not loaded"
     return 1
   fi
-  local name="" method=""
+  local name="" method="" interactive=0 yes=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --method) method="${2:-}"; shift 2 ;;
       --all) method="ALL"; shift ;;
+      --interactive|-i) interactive=1; shift ;;
+      --yes|-y) yes=1; shift ;;
       -h|--help) usage; return 0 ;;
       *) [ -z "$name" ] && name="$1" || log_warn "[64] ignoring extra arg: $1"; shift ;;
     esac
   done
+
+  # Interactive trigger: no name AND (--interactive OR stdin is a TTY).
   if [ -z "$name" ]; then
-    log_warn "[64] remove: <name> required"; usage; return 1
+    if [ "$interactive" -eq 1 ] || [ -t 0 ]; then
+      _cmd_remove_interactive "$method" "$yes"
+      return $?
+    fi
+    log_warn "[64] remove: <name> required (or pass --interactive on a TTY)"; usage
+    return 1
   fi
 
   # Primary defense: reject obviously hostile names BEFORE we touch anything.
@@ -270,21 +279,6 @@ cmd_remove() {
       log_file_error "(name=$name)" "name contains path separators or traversal -- refusing"
       return 1 ;;
   esac
-
-  # Method alias map: user types `shell-rc`, enumerators emit `shell-rc-app`
-  # for app blocks and `shell-rc-env` for env blocks. Treat `shell-rc` as
-  # "either of those". `ALL`/empty means "no filter".
-  _method_matches() {
-    local want="$1" got="$2"
-    [ -z "$want" ] && return 0
-    [ "$want" = "ALL" ] && return 0
-    [ "$want" = "$got" ] && return 0
-    if [ "$want" = "shell-rc" ]; then
-      [ "$got" = "shell-rc-app" ] && return 0
-      [ "$got" = "shell-rc-env" ] && return 0
-    fi
-    return 1
-  }
 
   local rc=0 hits=0
   while IFS=$'\t' read -r m n _p _scope; do
@@ -303,6 +297,163 @@ cmd_remove() {
   else
     log_ok "[64] removed $hits entr$([ $hits -eq 1 ] && echo y || echo ies) for '$name'"
   fi
+  return $rc
+}
+
+# ---- Interactive picker for cmd_remove --------------------------------------
+# Method alias map: user types `shell-rc`, enumerators emit `shell-rc-app`
+# for app blocks and `shell-rc-env` for env blocks. Treat `shell-rc` as
+# "either of those". `ALL`/empty means "no filter". Defined at file scope
+# so both cmd_remove and _cmd_remove_interactive can call it.
+_method_matches() {
+  local want="$1" got="$2"
+  [ -z "$want" ] && return 0
+  [ "$want" = "ALL" ] && return 0
+  [ "$want" = "$got" ] && return 0
+  if [ "$want" = "shell-rc" ]; then
+    [ "$got" = "shell-rc-app" ] && return 0
+    [ "$got" = "shell-rc-env" ] && return 0
+  fi
+  return 1
+}
+
+# _read_line VARNAME -- read one line from /dev/tty when usable, else from
+# the inherited stdin, with all errors silenced. Always returns 0 and sets
+# VARNAME (possibly to "") so callers can rely on a defined variable.
+_read_line() {
+  local __out_var="$1"
+  local __line=""
+  # `exec 3</dev/tty` will fail loudly on non-TTY hosts (CI/sandboxes), so
+  # probe with a subshell first and swallow the diagnostic.
+  if (exec 3</dev/tty) >/dev/null 2>&1; then
+    IFS= read -r __line </dev/tty 2>/dev/null || __line=""
+  else
+    IFS= read -r __line 2>/dev/null || __line=""
+  fi
+  printf -v "$__out_var" '%s' "$__line"
+}
+
+# Renders a numbered table of all tagged entries (filtered by --method when
+# provided), reads a selection like "1,3-5" or "all" from /dev/tty, confirms,
+# then removes each chosen entry via remove_startup_entry.
+_cmd_remove_interactive() {
+  local method="$1" yes="$2"
+
+  # Snapshot the live entries into parallel arrays so removals don't perturb
+  # the indexing the user just picked from.
+  local -a sel_method sel_name sel_path
+  local idx=0
+  while IFS=$'\t' read -r m n p _scope; do
+    [ -z "${m:-}" ] && continue
+    if [ -n "$method" ] && [ "$method" != "ALL" ]; then
+      _method_matches "$method" "$m" || continue
+    fi
+    sel_method[idx]="$m"
+    sel_name[idx]="$n"
+    sel_path[idx]="$p"
+    idx=$((idx+1))
+  done < <(list_startup_entries)
+
+  if [ "$idx" -eq 0 ]; then
+    log_info "[64] no entries to remove (filter='${method:-any}')"
+    return 0
+  fi
+
+  printf '\n  %sStartup entries tagged "%s"%s%s:\n' \
+    $'\e[36m' "${STARTUP_TAG_PREFIX:-lovable-startup}" \
+    "$([ -n "$method" ] && [ "$method" != "ALL" ] && printf ' (method=%s)' "$method")" \
+    $'\e[0m'
+  printf '  %3s  %-15s %-20s %s\n' '#' 'METHOD' 'NAME' 'PATH/ID'
+  printf '  %3s  %-15s %-20s %s\n' '---' '---------------' '--------------------' '--------------------------------------------'
+  local i
+  for ((i=0; i<idx; i++)); do
+    printf '  %3d  %-15s %-20s %s\n' "$((i+1))" "${sel_method[i]}" "${sel_name[i]}" "${sel_path[i]}"
+  done
+  printf '\n  Selection examples: 1   1,3,5   2-4   1,3-5   all   q (quit)\n'
+  printf '  Select entries to remove: '
+
+  # Read from /dev/tty so this works even when run.sh's stdin was redirected.
+  local input=""
+  _read_line input
+
+  case "$input" in
+    ""|q|Q|quit|exit) log_info "[64] cancelled (no selection)"; return 0 ;;
+  esac
+
+  # Parse selection -> a sorted, deduped list of 1-based indices.
+  local -a picks
+  if [ "$input" = "all" ] || [ "$input" = "ALL" ] || [ "$input" = "*" ]; then
+    for ((i=0; i<idx; i++)); do picks[i]="$((i+1))"; done
+  else
+    # Strip whitespace, split on commas, expand a-b ranges.
+    local cleaned
+    cleaned=$(printf '%s' "$input" | tr -d '[:space:]')
+    local pi=0 token a b j
+    IFS=',' read -ra _tokens <<<"$cleaned"
+    for token in "${_tokens[@]}"; do
+      [ -z "$token" ] && continue
+      if [[ "$token" =~ ^[0-9]+-[0-9]+$ ]]; then
+        a="${token%-*}"; b="${token#*-}"
+        if [ "$a" -gt "$b" ]; then local t="$a"; a="$b"; b="$t"; fi
+        for ((j=a; j<=b; j++)); do picks[pi]="$j"; pi=$((pi+1)); done
+      elif [[ "$token" =~ ^[0-9]+$ ]]; then
+        picks[pi]="$token"; pi=$((pi+1))
+      else
+        log_warn "[64] ignoring invalid selection token: $token"
+      fi
+    done
+    # Dedupe + sort numerically.
+    if [ "${#picks[@]}" -gt 0 ]; then
+      mapfile -t picks < <(printf '%s\n' "${picks[@]}" | sort -un)
+    fi
+  fi
+
+  if [ "${#picks[@]}" -eq 0 ]; then
+    log_info "[64] no valid selections -- nothing to do"
+    return 0
+  fi
+
+  # Validate range.
+  local -a valid=()
+  for p in "${picks[@]}"; do
+    if [ "$p" -ge 1 ] && [ "$p" -le "$idx" ]; then
+      valid+=("$p")
+    else
+      log_warn "[64] selection $p out of range (1..$idx) -- skipping"
+    fi
+  done
+  if [ "${#valid[@]}" -eq 0 ]; then
+    log_warn "[64] no in-range selections"; return 0
+  fi
+
+  # Confirm.
+  printf '\n  About to remove %d entr%s:\n' "${#valid[@]}" "$([ ${#valid[@]} -eq 1 ] && echo y || echo ies)"
+  for p in "${valid[@]}"; do
+    local k=$((p-1))
+    printf '    [%d] %s :: %s\n' "$p" "${sel_method[k]}" "${sel_name[k]}"
+  done
+  if [ "$yes" -ne 1 ]; then
+    printf '  Confirm? [y/N] '
+    local ans=""
+    _read_line ans
+    case "${ans:-}" in
+      y|Y|yes|YES) ;;
+      *) log_info "[64] cancelled at confirm"; return 0 ;;
+    esac
+  fi
+
+  # Remove. Iterate the snapshot so indices stay stable.
+  local rc=0 done=0 failed=0
+  for p in "${valid[@]}"; do
+    local k=$((p-1))
+    if remove_startup_entry "${sel_method[k]}" "${sel_name[k]}"; then
+      done=$((done+1))
+    else
+      failed=$((failed+1)); rc=1
+    fi
+  done
+
+  log_ok "[64] interactive remove: $done removed$([ $failed -gt 0 ] && echo " ($failed failed)")"
   return $rc
 }
 
