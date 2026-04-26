@@ -499,23 +499,23 @@ Write-ResidueReport -Rows $script:residueRows
 # CI job (or a follow-up script) can parse the same data without screen-
 # scraping. CODE-RED on any write failure: log the exact target path.
 if (-not [string]::IsNullOrWhiteSpace($ReportPath)) {
-    # Build the document with [pscustomobject] at every nesting level.
-    # We deliberately avoid nested [ordered]@{} blocks inside an outer
-    # [ordered]@{}: PowerShell rejects that with "Argument types do not
-    # match" at runtime. [pscustomobject] preserves declaration order in
-    # ConvertTo-Json and nests cleanly.
-    $scopeStatusObj = [pscustomobject]@{
-        CurrentUser = [pscustomobject]$script:scopeStatus.CurrentUser
-        AllUsers    = [pscustomobject]$script:scopeStatus.AllUsers
+    # Plain hashtables -- ConvertTo-Json serialises them as JSON objects.
+    # We avoid [ordered]@{} / [pscustomobject]@{} casts here because
+    # PowerShell rejects nested casts of pre-built ordered/PSObject values
+    # ("Argument types do not match") at runtime. Property order in JSON
+    # is irrelevant to consumers anyway -- they parse by name.
+    $scopeStatusObj = @{
+        CurrentUser = @{} + $script:scopeStatus.CurrentUser
+        AllUsers    = @{} + $script:scopeStatus.AllUsers
     }
-    $totalsObj = [pscustomobject]@{
+    $totalsObj = @{
         rows                = $script:residueRows.Count
         residue             = ($script:residueRows | Where-Object { $_.Class -eq 'RESIDUE' }).Count
         missingAfterInstall = ($script:residueRows | Where-Object { $_.Class -eq 'MISSING-AFTER-INSTALL' }).Count
         bleedInstall        = ($script:residueRows | Where-Object { $_.Class -eq 'BLEED-INSTALL' }).Count
         bleedUninstall      = ($script:residueRows | Where-Object { $_.Class -eq 'BLEED-UNINSTALL' }).Count
     }
-    $reportDoc = [pscustomobject]@{
+    $reportDoc = @{
         schema      = "scripts/54/scope-matrix-residue-report.v1"
         generatedAt = (Get-Date).ToString("o")
         admin       = $isAdmin
