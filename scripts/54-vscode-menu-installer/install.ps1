@@ -26,6 +26,7 @@ $sharedDir = Join-Path (Split-Path -Parent $scriptDir) "shared"
 . (Join-Path $scriptDir "helpers\vscode-install.ps1")
 . (Join-Path $scriptDir "helpers\audit-log.ps1")
 . (Join-Path $scriptDir "helpers\registry-snapshot.ps1")
+. (Join-Path $scriptDir "helpers\vscode-check.ps1")
 
 # -- Load config & log messages -----------------------------------------------
 $configPath = Join-Path $scriptDir "config.json"
@@ -98,6 +99,9 @@ try {
     $processedCount = 0
     $skippedCount   = 0
     $resolvedSummary = @{}
+    # Per-edition scope-rewritten config blocks -- handed to the post-op
+    # verification step so it probes the SAME paths the writes targeted.
+    $scopedEditions = @{}
 
     foreach ($editionName in $editions) {
         $editionCfg = $config.editions.$editionName
@@ -112,6 +116,7 @@ try {
         # every helper (Register-VsCodeMenuEntry, Test-VsCodeMenuEntry,
         # the audit log) sees the scoped path with no further plumbing.
         $editionCfg = Convert-EditionPathsForScope -EditionConfig $editionCfg -Scope $resolvedScope
+        $scopedEditions[$editionName] = $editionCfg
 
         Write-Log (($logMessages.messages.editionStart -replace '\{name\}', $editionName) -replace '\{label\}', $editionCfg.label) -Level "info"
 
@@ -179,6 +184,32 @@ try {
     $hasAuditPath = -not [string]::IsNullOrWhiteSpace($auditPath)
     if ($hasAuditPath) {
         Write-Log ($logMessages.messages.auditWritten -replace '\{path\}', $auditPath) -Level "info"
+    }
+
+    # ------------------------------------------------------------------
+    # Dedicated post-install verification step.
+    #   1) Print the registry CHANGE report from the run's audit JSONL
+    #      so the user sees exactly what was added / failed.
+    #   2) Re-probe every (scope-rewritten) target key and confirm it
+    #      now exists -- catches any silent post-write disappearance.
+    # ------------------------------------------------------------------
+    $hasScopedEditions = $scopedEditions.Count -gt 0
+    if ($hasScopedEditions) {
+        $auditSummary = Get-RegistryAuditSummary
+        Write-RegistryAuditReport -Summary $auditSummary -Action 'install'
+
+        $verifyResult = Invoke-PostOpVerification `
+            -Action         'install' `
+            -Config         $config `
+            -ResolvedScope  $resolvedScope `
+            -LogMsgs        $logMessages `
+            -ScopedEditions $scopedEditions
+
+        if ($verifyResult.fail -gt 0) {
+            Write-Log ("Post-install verification reported " + $verifyResult.fail + " failing key(s) -- review the table above (failure path: see per-row regPath).") -Level "error"
+        }
+    } else {
+        Write-Log "Post-install verification skipped: no editions were processed this run." -Level "warn"
     }
 
 } catch {
