@@ -107,6 +107,21 @@ Schema is stable: `tag` (string), `count` (number), `entries[]` of
 `{method, name, path, scope}` strings. Empty list returns
 `{"tag":"...","count":0,"entries":[]}` with exit 0.
 
+### Filtering by method
+
+Both table and JSON output support `--method <name>` to narrow results to a
+single registration type. The same family alias used by `remove` works here:
+`--method shell-rc` matches both `shell-rc-app` and `shell-rc-env`.
+
+```bash
+./run.sh -I 64 -- list --method autostart           # only autostart entries
+./run.sh -I 64 -- list --method systemd-user        # only systemd user units
+./run.sh -I 64 -- list --method shell-rc-env        # only env-var blocks
+./run.sh -I 64 -- list --json --method shell-rc     # JSON, app + env blocks
+```
+
+Unknown methods produce an empty result (exit 0), not an error.
+
 ## Tag convention
 
 Every entry this script writes is tagged with the prefix `lovable-startup` so
