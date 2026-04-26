@@ -66,6 +66,7 @@ component_php_install() {
 
     sudo apt-get update -y >/dev/null 2>&1 || true
     local pkgs; pkgs="$(_php_pkg_list "$v")"
+    # shellcheck disable=SC2086 # $pkgs is a deliberately word-split package list
     if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $pkgs; then
         log_err "[70][php] apt-get install failed for: $pkgs"
         return 1
