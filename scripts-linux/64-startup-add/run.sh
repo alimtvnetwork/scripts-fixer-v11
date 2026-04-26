@@ -414,7 +414,7 @@ _cmd_remove_interactive() {
   fi
 
   # Validate range.
-  local -a valid
+  local -a valid=()
   for p in "${picks[@]}"; do
     if [ "$p" -ge 1 ] && [ "$p" -le "$idx" ]; then
       valid+=("$p")
