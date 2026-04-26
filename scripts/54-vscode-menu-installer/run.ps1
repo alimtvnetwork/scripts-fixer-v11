@@ -55,16 +55,16 @@ if ($Help -or $Command -ieq "help" -or $Command -ieq "--help" -or $Command -ieq 
 
 switch ($Command.ToLower()) {
     "uninstall" {
-        & (Join-Path $scriptDir "uninstall.ps1") -Edition $Edition -Scope $Scope
+        & (Join-Path $scriptDir "uninstall.ps1") -Edition $Edition -Scope $Scope -Verbosity $Verbosity
     }
     "repair" {
-        & (Join-Path $scriptDir "repair.ps1") -Edition $Edition -VsCodePath $VsCodePath -Scope $Scope
+        & (Join-Path $scriptDir "repair.ps1") -Edition $Edition -VsCodePath $VsCodePath -Scope $Scope -Verbosity $Verbosity
     }
     "sync" {
         # Auto-detect current VS Code path and rewrite drifted \command
         # values. Pass --dry-run via $Rest to preview changes.
         $isDryRun = ($Rest -contains '-DryRun') -or ($Rest -contains '--dry-run')
-        $syncArgs = @{ Edition = $Edition; VsCodePath = $VsCodePath; Scope = $Scope }
+        $syncArgs = @{ Edition = $Edition; VsCodePath = $VsCodePath; Scope = $Scope; Verbosity = $Verbosity }
         if ($isDryRun) { $syncArgs['DryRun'] = $true }
         & (Join-Path $scriptDir "sync.ps1") @syncArgs
     }
