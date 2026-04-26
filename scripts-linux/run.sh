@@ -78,6 +78,16 @@ while [ $# -gt 0 ]; do
         VERB="wp-passthrough"; WP_SUB="install"; WP_COMP=""; shift; WP_REST=("$@"); break ;;
     wp-only)
         VERB="wp-passthrough"; WP_SUB="install"; WP_COMP="wp-only"; shift; WP_REST=("$@"); break ;;
+    # ---- top-level shortcuts to script 68 (group creation) ----
+    # Two separate shell scripts in 68-user-mgmt/ that the root orchestrator
+    # exposes directly so users don't need to remember the folder path:
+    #   ./run.sh add-group <name> [--gid N] [--system] [--dry-run]
+    #   ./run.sh add-groups-from-json <file.json> [--dry-run]
+    # Aliases provided for natural ordering:  group-add / groups-from-json.
+    add-group|group-add)
+        VERB="grp-passthrough"; GRP_SUB="cli";  shift; GRP_REST=("$@"); break ;;
+    add-groups-from-json|groups-from-json|add-group-from-json|group-from-json)
+        VERB="grp-passthrough"; GRP_SUB="json"; shift; GRP_REST=("$@"); break ;;
     *)
         # `./run.sh install wordpress [args]` lands here AFTER install was consumed.
         # Re-route it through the wp passthrough so the user-friendly form works.
