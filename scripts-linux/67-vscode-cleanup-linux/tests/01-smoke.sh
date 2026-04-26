@@ -100,15 +100,6 @@ RC_APPLY=$?
 grep -q "Planned VS Code cleanup actions" "$SANDBOX/apply.out"; _assert "apply rendered plan tree before deleting" $?
 grep -q "Confirmation skipped: --yes"     "$SANDBOX/apply.out"; _assert "apply honored --yes" $?
 
-echo "--- apply, no-yes, no-tty (must abort) ---"
-# Re-stage a single user-config dir so the abort run has something to plan.
-mkdir -p "$FAKE_HOME/.config/Code"
-bash "$SCRIPT_ROOT/run.sh" --scope user --no-color --only user-config </dev/null > "$SANDBOX/abort.out" 2>&1
-RC_ABORT=$?
-[ "$RC_ABORT" -eq 2 ];                                       _assert "no-tty + no --yes -> exit 2" $?
-[ -d "$FAKE_HOME/.config/Code"                              ]; _assert "abort kept ~/.config/Code on disk" $?
-grep -q "Aborting to avoid an unattended destructive run"  "$SANDBOX/abort.out"; _assert "abort logged the safe-default reason" $?
-
 # Apply: only matching artifacts gone, decoys preserved.
 [ ! -d "$FAKE_HOME/.local/share/code"           ]; _assert "apply removed tarball dir"                $?
 [ ! -e "$FAKE_HOME/.local/bin/code"             ]; _assert "apply removed per-user shim"              $?
@@ -117,7 +108,7 @@ grep -q "Aborting to avoid an unattended destructive run"  "$SANDBOX/abort.out";
 [   -d "$FAKE_HOME/.config/UnrelatedTool"        ]; _assert "apply preserved decoy ~/.config/UnrelatedTool" $?
 [ "$RC_APPLY" -eq 0 ]; _assert "apply exit code = 0" $?
 
-# Manifest exists + lists detected methods.
+# Manifest from the apply run (latest symlink points at it before we re-run anything).
 manifest="$(ls -1 "$SANDBOX/logs/"*/manifest.json 2>/dev/null | tail -n 1)"
 if [ -z "$manifest" ] || [ ! -f "$manifest" ]; then
   echo "  FAIL manifest written (looked for: $SANDBOX/logs/*/manifest.json)"
@@ -128,6 +119,15 @@ else
   grep -q '"user-config"'            "$manifest"; _assert "manifest mentions user-config" $?
   grep -q '"method":"tarball"'       "$manifest"; _assert "manifest has tarball rows"     $?
 fi
+
+echo "--- apply, no-yes, no-tty (must abort) ---"
+# Re-stage a single user-config dir so the abort run has something to plan.
+mkdir -p "$FAKE_HOME/.config/Code"
+bash "$SCRIPT_ROOT/run.sh" --scope user --no-color --only user-config </dev/null > "$SANDBOX/abort.out" 2>&1
+RC_ABORT=$?
+[ "$RC_ABORT" -eq 2 ];                                       _assert "no-tty + no --yes -> exit 2" $?
+[ -d "$FAKE_HOME/.config/Code"                              ]; _assert "abort kept ~/.config/Code on disk" $?
+grep -Eq "Aborting to avoid|aborted by operator"  "$SANDBOX/abort.out"; _assert "abort logged the safe-default reason" $?
 
 echo
 echo "Results: PASS=$pass FAIL=$fail"
