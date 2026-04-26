@@ -11,7 +11,7 @@
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white)](https://github.com/alimtvnetwork/gitmap-v6#requirements)
 [![Script](https://img.shields.io/badge/Script-10-8b5cf6)](https://github.com/alimtvnetwork/gitmap-v6/blob/main/scripts/registry.json)
 [![License](https://img.shields.io/badge/License-MIT-eab308)](https://github.com/alimtvnetwork/gitmap-v6/blob/main/LICENSE)
-[![Version](https://img.shields.io/badge/Version-v0.70.0-f97316)](https://github.com/alimtvnetwork/gitmap-v6/blob/main/scripts/version.json)
+[![Version](https://img.shields.io/badge/Version-v0.112.0-f97316)](https://github.com/alimtvnetwork/gitmap-v6/blob/main/scripts/version.json)
 [![Changelog](https://img.shields.io/badge/Changelog-Latest-ec4899)](https://github.com/alimtvnetwork/gitmap-v6/blob/main/changelog.md)
 [![Repo](https://img.shields.io/badge/Repo-gitmap--v6-22c55e?logo=github&logoColor=white)](https://github.com/alimtvnetwork/gitmap-v6)
 
@@ -200,6 +200,89 @@ whether the file exists, and which fallback (if any) was tried.
 cd scripts\01-vscode-context-menu-fix
 .\run.ps1
 ```
+
+## Check, Repair, and Invariants
+
+### Invariant checks
+
+The `check` verb verifies three repair invariants in addition to the install-state checks:
+
+| # | Invariant |
+|---|-----------|
+| 1 | No `file-target` child key under `HKCR\*\shell` |
+| 2 | No suppression values (`LegacyDisable`, `Extended`, `HideBasedOnVelocityId`) on any of the three shell parents |
+| 3 | No legacy duplicate child keys (allow-list in `config.repair.legacyNames`) under any of the three shell parents |
+
+### Opt-out: `config.repair.enforceInvariants`
+
+`config.json` contains `repair.enforceInvariants` (default `true`). When `true`, the `check` verb **fails** on invariant violations (exit code 1). When `false`, violations are **downgraded to warnings** and the run exits 0.
+
+The install-state checks ("is the entry registered?") are **always** enforced regardless of this flag.
+
+### Decision tree: are invariants enforced or skipped?
+
+```
+         Start: .\run.ps1 -I 10 check
+                    │
+                    ▼
+    ┌───────────────────────────────┐
+    │ config.repair.enforceInvariants │
+    │           exists?               │
+    └───────────────┬───────────────┘
+                    │
+        ┌───────────┴───────────┐
+        │                       │
+        ▼ No                   ▼ Yes
+   ┌─────────┐         ┌─────────────┐
+   │ Default │         │ Read value  │
+   │  true   │         └──────┬──────┘
+   └────┬────┘                │
+        │           ┌─────────┴─────────┐
+        │           │                   │
+        └──────────►▼ true            ▼ false
+              ┌─────────────┐    ┌─────────────┐
+              │  ENFORCED   │    │   SKIPPED   │
+              │  [MISS] → 1 │    │ [WARN] → 0  │
+              │  Repair     │    │ Report only │
+              │  suggested  │    │ No repair   │
+              │  in summary │    │  suggested  │
+              └─────────────┘    └─────────────┘
+```
+
+**Key rule:** Script 10 has **only** `config.repair.enforceInvariants`. There is no `-SkipRepairInvariants` switch (that lives in Script 54's `verify` harness). The tree above is the complete picture for Script 10.
+
+For comparison, Script 54's `verify` harness uses **both** flags. Here is the two-flag interaction matrix:
+
+| `enforceInvariants` | `-SkipRepairInvariants` | Result |
+|---|---|---|
+| `true`  | **Not present** (default) | Invariants **enforced** — `[MISS]` → exit 1 |
+| `true`  | **Present** (`-SkipRepairInvariants`) | Invariants **skipped** — warning only → exit 0 |
+| `false` | **Not present** (default) | Invariants **skipped** — warning only → exit 0 |
+| `false` | **Present** (`-SkipRepairInvariants`) | Invariants **skipped** — warning only → exit 0 |
+
+**Script 10 simplified rule:** Since `-SkipRepairInvariants` does not exist here, only the first column matters. Set `enforceInvariants` to `false` if you want invariant violations to be warnings rather than failures.
+
+| Verb | Reads `enforceInvariants`? | Notes |
+|---|---|---|
+| `check`                                | **Yes** | Only verb that consults the flag. |
+| `install`, `repair`, `rollback`, `verify` | **No**  | These verbs always act; they do not read the flag. |
+
+### Repair verb and `-Only` selectors
+
+The `repair` verb supports targeted fixes via the `-Only` parameter:
+
+```powershell
+# Fix only invariant I2 (suppression values)
+.\run.ps1 -I 10 repair -Only i2
+
+# Fix only folder-target and background-target install issues
+.\run.ps1 -I 10 repair -Only folder,background
+
+# Fix only legacy duplicate keys
+.\run.ps1 -I 10 repair -Only legacy
+```
+
+See `log-messages.json` for the full selector mapping.
 
 ## Naming Conventions
 
