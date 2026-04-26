@@ -42,5 +42,34 @@
     "passwordNeverExpires": true,
     "accountNeverExpires": true,
     "pinHintFolder": "%TEMP%"
+  },
+  "startup": {
+    "_comment": "Cross-OS startup-add (apps + env vars). Tag prefix is shared with Unix side.",
+    "tagPrefix": "lovable-startup",
+    "defaultAppMethod": "startup-folder",
+    "defaultEnvScope": "user",
+    "methods": {
+      "app": ["startup-folder", "hkcu-run", "hklm-run", "task"],
+      "env": ["registry", "setx"]
+    },
+    "paths": {
+      "startupFolderUser": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+      "startupFolderCommon": "%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+    },
+    "registry": {
+      "runUser": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "runMachine": "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "envUser": "HKCU:\\Environment",
+      "envMachine": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"
+    },
+    "task": {
+      "folder": "lovable-startup",
+      "scheduleType": "ONLOGON",
+      "runLevel": "LIMITED",
+      "elevatedRunLevel": "HIGHEST"
+    },
+    "broadcastSettingChange": true,
+    "forceReplaceDefault": false,
+    "logFileName": "startup-add"
   }
 }
