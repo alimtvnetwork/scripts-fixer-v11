@@ -121,6 +121,14 @@ while [ $# -gt 0 ]; do
     # the orchestrator (--spec / --groups-json / --users-json / --group / --user).
     useradm-verify|usermgmt-verify|user-verify|verify-users)
         VERB="useradm-verify"; shift; USERADM_VRF_REST=("$@"); break ;;
+    # ---- top-level shortcut: E2E test matrix for scripts 65/66/67 ----
+    # Runs every per-folder smoke test on the current OS, then drives
+    # each script through a sandbox-mode dry-run, then asserts the OS
+    # guard fires on the wrong OS, then asserts the root-requirement
+    # contract. Pure read-only on the host -- everything happens under
+    # mktemp sandboxes.
+    e2e-matrix|e2e|test-matrix)
+        VERB="e2e-matrix"; shift; break ;;
     *)
         # `./run.sh install wordpress [args]` lands here AFTER install was consumed.
         # Re-route it through the wp passthrough so the user-friendly form works.
