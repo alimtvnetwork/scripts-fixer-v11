@@ -353,18 +353,11 @@ else
 
   # Convert TARGETS_TSV (status\tkind\ttarget\tbytes\tdetail) into the
   # PLAN_TSV schema confirm_render_plan expects (bucket\tkind\ttarget\tdetail).
-  # We need the bucket per row, which only the per-category ROWS_TSV knows,
-  # so we look it up with a small awk pass.
+  # 65's per-target rows are not category-tagged at the sweep layer; we
+  # default the bucket to "user" (correct for the vast majority of
+  # categories) and override to "command" for command-driven targets that
+  # are emitted with a "cmd:..." synthetic target name.
   : > "$PLAN_TSV"
-  awk -F'\t' '
-    NR==FNR { bucket[$2] = $4; next }
-    $1 == "would" { print bucket["unknown"] "\t" $2 "\t" $3 "\t" $5 }
-  ' "$ROWS_TSV" "$TARGETS_TSV" > /dev/null 2>&1 || true
-  # The simple awk above can't reach into per-target rows for category id,
-  # so do the join in bash: every "would" target is attributed to the most
-  # recent category whose row we just emitted. Easier: iterate TARGETS_TSV
-  # straight, defaulting bucket to "user" (correct for path-driven sweeps;
-  # command-driven categories override below).
   while IFS=$'\t' read -r status kind target bytes detail; do
     [ "$status" = "would" ] || continue
     # Heuristic bucket: command-driven targets (target prefix "cmd:") fall
