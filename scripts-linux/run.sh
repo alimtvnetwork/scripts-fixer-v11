@@ -109,6 +109,13 @@ while [ $# -gt 0 ]; do
         VERB="useradm-help"; USERADM_SUB="user";  shift; break ;;
     group-help|groups-help)
         VERB="useradm-help"; USERADM_SUB="group"; shift; break ;;
+    # ---- top-level shortcut: parse-only orchestrator (script 68) ----
+    # Takes a unified spec (--spec FILE), separate JSONs (--groups-json /
+    # --users-json), or inline --group / --user entries -- in any
+    # combination -- and runs all four leaves in the correct order
+    # (groups first) with a single shared summary.
+    useradm-bootstrap|usermgmt-bootstrap|user-bootstrap)
+        VERB="useradm-bootstrap"; shift; USERADM_BOOT_REST=("$@"); break ;;
     *)
         # `./run.sh install wordpress [args]` lands here AFTER install was consumed.
         # Re-route it through the wp passthrough so the user-friendly form works.
