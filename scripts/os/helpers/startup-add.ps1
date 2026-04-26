@@ -126,20 +126,21 @@ if ($Kind -eq 'env') {
     $envOk = $false
     if ($Method -eq 'registry') {
         $regPath = if ($Scope -eq 'machine') { $startupCfg.registry.envMachine } else { $startupCfg.registry.envUser }
+        $hiveLabel = if ($Scope -eq 'machine') { 'HKLM' } else { 'HKCU' }
         try {
             if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
             # use ExpandString if value contains %VAR% references, else String
             $valType = if ($envVal -match '%[^%]+%') { 'ExpandString' } else { 'String' }
             Set-ItemProperty -Path $regPath -Name $envKey -Value $envVal -Type $valType -Force
             $okMsg = ($logMessages.startup.registryWritten `
-                -replace '\{hive\}', (if ($Scope -eq 'machine') { 'HKLM' } else { 'HKCU' }) `
+                -replace '\{hive\}', $hiveLabel `
                 -replace '\{value\}', $envKey `
                 -replace '\{data\}', $masked)
             Write-Log $okMsg -Level "ok"
             $envOk = $true
         } catch {
             $err = ($logMessages.startup.registryWriteFailed `
-                -replace '\{hive\}', (if ($Scope -eq 'machine') { 'HKLM' } else { 'HKCU' }) `
+                -replace '\{hive\}', $hiveLabel `
                 -replace '\{value\}', $envKey `
                 -replace '\{error\}', $_.Exception.Message)
             Write-Log $err -Level "fail"
