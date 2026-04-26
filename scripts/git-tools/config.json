@@ -1,0 +1,32 @@
+{
+  "_comment": "git-tools dispatcher config. Mirrors scripts/scan/config.json conventions.",
+  "safeAll": {
+    "defaultMode": "wildcard",
+    "scanDefaultDepth": 4,
+    "scanMaxDepth": 12,
+    "scanSkipDirs": [
+      ".git",
+      "node_modules",
+      ".venv",
+      "venv",
+      "vendor",
+      "dist",
+      "build",
+      "target",
+      ".next",
+      ".nuxt",
+      "__pycache__",
+      ".gradle",
+      "bin",
+      "obj"
+    ]
+  },
+  "list": {
+    "groupWildcardFirst": true,
+    "showCounts": true
+  },
+  "prune": {
+    "neverPruneWildcard": true,
+    "dryRunDefault": false
+  }
+}
