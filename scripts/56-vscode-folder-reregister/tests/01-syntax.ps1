@@ -88,11 +88,18 @@ foreach ($f in @('helpers/registry.ps1','run.ps1')) {
 }
 
 # 5. Dispatch the 'help' verb -- safe on every OS, no admin needed.
+#    StrictMode in this test forbids reading $LASTEXITCODE if it was never
+#    set (which happens when run.ps1 returns instead of `exit`-ing). We
+#    assert on captured output instead, which is the actual contract.
 try {
     $runScript = Join-Path $root 'run.ps1'
     $out = & $runScript -Help 2>&1
-    if ($LASTEXITCODE -in @(0, $null)) { _ok "help verb dispatches" }
-    else { _no "help verb dispatches" ("exit=" + $LASTEXITCODE + "; output=" + ($out -join '|')) }
+    $joined = ($out | Out-String)
+    if ($joined -match 'reregister' -and $joined -match 'COMMANDS') {
+        _ok "help verb dispatches"
+    } else {
+        _no "help verb dispatches" ("output did not include verbs/commands: " + ($joined.Substring(0, [Math]::Min(200, $joined.Length))))
+    }
 } catch {
     _no "help verb dispatches" $_.Exception.Message
 }
