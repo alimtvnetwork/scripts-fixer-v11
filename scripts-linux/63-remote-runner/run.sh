@@ -2,7 +2,15 @@
 # 63-remote-runner
 # Run a command on one host, a group, or every host defined in config.json.
 # Defaults to PASSWORD auth via sshpass; supports key auth and interactive
-# password prompts. Logs each session to .logs/63/<TS>-<target>.log.
+# password prompts. Each invocation writes a structured run directory:
+#   .logs/63/<TIMESTAMP>-<target>/
+#     ├── command.txt              exact command run
+#     ├── session.log              combined chronological log
+#     ├── manifest.json            machine-readable summary
+#     └── hosts/
+#         ├── <name>.log           raw stdout+stderr per host
+#         └── <name>.meta.json     {host, exit, duration, ts_start, ts_end, status}
+# A 'latest' symlink in .logs/63/ always points to the newest run.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -13,7 +21,7 @@ export SCRIPT_ID="63"
 
 CONFIG="$SCRIPT_DIR/config.json"
 SAMPLE="$SCRIPT_DIR/config.sample.json"
-SESSION_DIR="$ROOT/.logs/63"
+LOGS_ROOT="$ROOT/.logs/63"
 GITIGNORE_LINE="scripts-linux/63-remote-runner/config.json"
 
 # ---------- bootstrap ----------
@@ -127,20 +135,134 @@ host_record() {
   ' "$CONFIG"
 }
 
-# ---------- runner ----------
-SESSION_LOG=""
-init_session_log() {
-  ensure_dir "$SESSION_DIR" || return 0
+# ---------- runner: structured per-run log directory ----------
+# These are exported because `run_on_host` is invoked in subshells in
+# parallel mode, and bash sub-shells inherit env vars but NOT plain locals.
+RUN_DIR=""           # absolute path: .logs/63/<TS>-<target>/
+RUN_HOSTS_DIR=""     # RUN_DIR/hosts/
+RUN_SESSION_LOG=""   # RUN_DIR/session.log
+RUN_TS_START=""      # epoch seconds when this run started
+RUN_TARGET=""        # original target spec (e.g. "group:web")
+RUN_CMD=""           # the exact command being executed
+
+# Sanitise an arbitrary string into a filename-safe token.
+__safe_token() {
+  echo "$1" | tr -c 'A-Za-z0-9._-' '_' | sed 's/__*/_/g; s/^_//; s/_$//'
+}
+
+init_run_dir() {
+  RUN_TARGET="$1"
+  RUN_CMD="$2"
+  RUN_TS_START=$(date +%s)
   local ts; ts=$(date '+%Y%m%d-%H%M%S')
-  local target_safe; target_safe=$(echo "$1" | tr -c 'A-Za-z0-9._-' '_')
-  SESSION_LOG="$SESSION_DIR/$ts-$target_safe.log"
+  local target_safe; target_safe=$(__safe_token "$RUN_TARGET")
+  RUN_DIR="$LOGS_ROOT/$ts-$target_safe"
+  RUN_HOSTS_DIR="$RUN_DIR/hosts"
+  RUN_SESSION_LOG="$RUN_DIR/session.log"
+
+  if ! ensure_dir "$RUN_HOSTS_DIR"; then
+    log_err "[63] Could not create run dir -- continuing without per-run logs"
+    RUN_DIR=""; RUN_HOSTS_DIR=""; RUN_SESSION_LOG=""
+    return 1
+  fi
+
+  # Exact command -- separate file so it's safe to cat without shell quoting issues.
+  printf '%s\n' "$RUN_CMD"   > "$RUN_DIR/command.txt"
+  printf '%s\n' "$RUN_TARGET" > "$RUN_DIR/target.txt"
+
   {
-    echo "# Session: $(date '+%Y-%m-%d %H:%M:%S')"
-    echo "# Target:  $1"
-    echo "# Command: $2"
+    echo "# Session:   $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "# Target:    $RUN_TARGET"
+    echo "# Command:   $RUN_CMD"
+    echo "# Run dir:   $RUN_DIR"
     echo "# ---"
-  } >> "$SESSION_LOG"
-  log_info "[63] Session log: $SESSION_LOG"
+  } > "$RUN_SESSION_LOG"
+
+  # Update 'latest' symlink (atomic via mv)
+  local latest_link="$LOGS_ROOT/latest"
+  ln -sfn "$(basename "$RUN_DIR")" "$latest_link" 2>/dev/null || true
+
+  # Export for parallel-mode subshells
+  export RUN_DIR RUN_HOSTS_DIR RUN_SESSION_LOG RUN_TS_START RUN_TARGET RUN_CMD
+
+  log_info "[63] Run dir: $RUN_DIR"
+}
+
+# Append host record to manifest.json hosts[]. Atomic via temp + mv.
+# Args: host_name exit duration ts_start ts_end status
+__write_host_meta() {
+  [ -n "$RUN_HOSTS_DIR" ] || return 0
+  local name="$1" rc="$2" dur="$3" t0="$4" t1="$5" status="$6"
+  local meta="$RUN_HOSTS_DIR/$(__safe_token "$name").meta.json"
+  jq -n \
+    --arg name "$name" --arg status "$status" \
+    --argjson exit "$rc" --argjson dur "$dur" \
+    --argjson ts_start "$t0" --argjson ts_end "$t1" \
+    '{host:$name, exit:$exit, duration_seconds:$dur, ts_start:$ts_start, ts_end:$ts_end, status:$status}' \
+    > "$meta" 2>/dev/null || true
+}
+
+# Write the run-level manifest.json by aggregating every hosts/*.meta.json.
+# Args: ok fail total
+__write_run_manifest() {
+  [ -n "$RUN_DIR" ] || return 0
+  local ok="$1" fail="$2" total="$3"
+  local ts_end; ts_end=$(date +%s)
+  local dur=$(( ts_end - RUN_TS_START ))
+  local manifest="$RUN_DIR/manifest.json"
+
+  # Slurp every host meta into one array
+  local host_metas="[]"
+  if ls "$RUN_HOSTS_DIR"/*.meta.json >/dev/null 2>&1; then
+    host_metas=$(jq -s '.' "$RUN_HOSTS_DIR"/*.meta.json 2>/dev/null || echo "[]")
+  fi
+
+  jq -n \
+    --arg target "$RUN_TARGET" \
+    --arg cmd "$RUN_CMD" \
+    --arg run_dir "$RUN_DIR" \
+    --argjson ts_start "$RUN_TS_START" \
+    --argjson ts_end "$ts_end" \
+    --argjson dur "$dur" \
+    --argjson ok "$ok" --argjson fail "$fail" --argjson total "$total" \
+    --argjson hosts "$host_metas" \
+    '{
+       schema: "63-remote-runner.run/v1",
+       run_dir: $run_dir,
+       target: $target,
+       command: $cmd,
+       ts_start: $ts_start,
+       ts_end:   $ts_end,
+       duration_seconds: $dur,
+       summary: {ok: $ok, fail: $fail, total: $total},
+       hosts:   $hosts
+     }' > "$manifest" 2>/dev/null || true
+}
+
+# Append a chronological line to the combined session log (locked-ish via O_APPEND).
+__session_append() {
+  [ -n "$RUN_SESSION_LOG" ] || return 0
+  printf '%s\n' "$*" >> "$RUN_SESSION_LOG"
+}
+
+# Apply retention policy: keep newest N run-dirs per .logs/63/, delete the rest.
+# Reads .logging.retain_runs from config.json (default 50, 0 = keep all).
+__apply_retention() {
+  local retain
+  retain=$(jq -r '.logging.retain_runs // 50' "$CONFIG" 2>/dev/null)
+  [ "$retain" -gt 0 ] 2>/dev/null || return 0
+  local dirs
+  # `latest` is a symlink, not a dir, so -type d won't match it. Good.
+  dirs=$(find "$LOGS_ROOT" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' 2>/dev/null | sort -r)
+  local count=0
+  while IFS= read -r d; do
+    [ -z "$d" ] && continue
+    count=$((count + 1))
+    if [ "$count" -gt "$retain" ]; then
+      rm -rf "$LOGS_ROOT/$d" 2>/dev/null && \
+        log_info "[63] Retention: pruned old run dir $d (kept newest $retain)"
+    fi
+  done <<<"$dirs"
 }
 
 prompt_password_if_needed() {
@@ -195,8 +317,19 @@ run_on_host() {
 
   local target_user_host="$h_user@$h_host"
   local t0 t1 dur rc=0 out
+  local host_log=""
+  if [ -n "$RUN_HOSTS_DIR" ]; then
+    host_log="$RUN_HOSTS_DIR/$(__safe_token "$h_name").log"
+    {
+      echo "# Host:    $h_name ($h_user@$h_host:$h_port  auth=$h_auth)"
+      echo "# Command: $cmd"
+      echo "# Started: $(date '+%Y-%m-%d %H:%M:%S')"
+      echo "# ---"
+    } > "$host_log"
+  fi
 
   log_info "[63] [$h_name] >>> $cmd"
+  __session_append "[$(date '+%H:%M:%S')] [$h_name] >>> $cmd"
   t0=$(date +%s)
 
   case "$h_auth" in
@@ -220,14 +353,35 @@ run_on_host() {
 
   t1=$(date +%s); dur=$((t1 - t0))
 
-  # Log full output to session log (one block per host)
-  if [ -n "$SESSION_LOG" ]; then
+  # Per-host raw log (full stdout+stderr, no host-prefix munging)
+  if [ -n "$host_log" ]; then
+    {
+      printf '%s\n' "$out"
+      echo ""
+      echo "# ---"
+      echo "# Finished: $(date '+%Y-%m-%d %H:%M:%S')"
+      echo "# Exit:     $rc"
+      echo "# Duration: ${dur}s"
+    } >> "$host_log"
+  fi
+
+  # Combined session log (one host block, chronological)
+  if [ -n "$RUN_SESSION_LOG" ]; then
     {
       echo ""
       echo "## [$h_name] exit=$rc dur=${dur}s"
       printf '%s\n' "$out"
-    } >> "$SESSION_LOG"
+    } >> "$RUN_SESSION_LOG"
   fi
+
+  # Map exit code -> status string for the meta JSON
+  local status="fail"
+  case "$rc" in
+    0)   status="ok" ;;
+    5)   status="auth_fail" ;;
+    255) status="unreachable" ;;
+  esac
+  __write_host_meta "$h_name" "$rc" "$dur" "$t0" "$t1" "$status"
 
   # Echo command output to console (indented)
   printf '%s\n' "$out" | sed "s/^/    [$h_name] /"
@@ -285,7 +439,7 @@ verb_run() {
   local n; n=$(printf '%s\n' "$hosts" | wc -l)
   log_info "[63] Target '$target' resolved to $n host(s): $(echo "$hosts" | tr '\n' ' ')"
 
-  init_session_log "$target" "$cmd"
+  init_run_dir "$target" "$cmd"
 
   local ok=0 fail=0 skip=0
   # Parallel mode is intentionally simple: background jobs + wait + per-host exit code via files.
@@ -316,6 +470,13 @@ verb_run() {
 
   local total=$((ok + fail + skip))
   log_info "[63] Summary: $ok ok, $fail fail, $skip skipped (total $total)"
+  __write_run_manifest "$ok" "$fail" "$total"
+  if [ -n "$RUN_DIR" ]; then
+    log_info "[63] Manifest: $RUN_DIR/manifest.json"
+    log_info "[63] Per-host: $RUN_HOSTS_DIR/<name>.log"
+    log_info "[63] Latest:   $LOGS_ROOT/latest -> $(basename "$RUN_DIR")"
+  fi
+  __apply_retention
   [ "$fail" = "0" ]
 }
 
@@ -371,6 +532,11 @@ verb_help() {
     run.sh run <target> -- "<command>"   [--parallel N] [--dry-run]
     run.sh list
     run.sh check [<target>]
+    run.sh logs                       # list recent runs (newest first)
+    run.sh logs show [<run>]          # cat session.log for a run (default: latest)
+    run.sh logs host <name> [<run>]   # cat one host's log from a run
+    run.sh logs manifest [<run>]      # pretty-print manifest.json
+    run.sh logs clear                 # remove ALL run dirs (asks for confirmation)
     run.sh help
 
   Targets:
@@ -385,6 +551,10 @@ verb_help() {
     run.sh run host:db-1 -- "df -h /var/lib/postgresql"
     run.sh run web -- "hostname" --parallel 4
     run.sh run all -- "whoami" --dry-run
+    run.sh logs                       # see all past runs
+    run.sh logs show                  # session.log of newest run
+    run.sh logs host web-1 latest     # raw stdout from web-1 in newest run
+    run.sh logs manifest latest       # JSON summary of newest run
 
   Auth (per-host or defaults.auth):
     password   uses sshpass; reads from .password or prompts
@@ -395,7 +565,103 @@ verb_help() {
     Passwords are passed via SSHPASS env (never on argv).
     Use 'auth: key' for production -- password mode is for lab/training.
 
+  Log layout (per run):
+    .logs/63/<TIMESTAMP>-<target>/
+      ├── command.txt              exact command run
+      ├── target.txt               original target spec
+      ├── session.log              combined chronological output
+      ├── manifest.json            structured summary {target, hosts[], summary}
+      └── hosts/
+          ├── <name>.log           raw stdout+stderr per host
+          └── <name>.meta.json     {exit, duration_seconds, ts_start, ts_end, status}
+    .logs/63/latest -> <newest run dir>
+
 TXT
+}
+
+# ---------- verb: logs ----------
+# Resolve a run-dir argument: empty -> latest symlink; absolute -> as-is;
+# bare name -> $LOGS_ROOT/<name>; "latest" -> latest symlink target.
+__resolve_run_dir() {
+  local r="${1:-}"
+  if [ -z "$r" ] || [ "$r" = "latest" ]; then
+    if [ -L "$LOGS_ROOT/latest" ]; then
+      echo "$LOGS_ROOT/$(readlink "$LOGS_ROOT/latest")"
+    elif [ -d "$LOGS_ROOT/latest" ]; then
+      echo "$LOGS_ROOT/latest"
+    else
+      echo ""
+    fi
+    return
+  fi
+  if [ -d "$r" ]; then echo "$r"; return; fi
+  if [ -d "$LOGS_ROOT/$r" ]; then echo "$LOGS_ROOT/$r"; return; fi
+  echo ""
+}
+
+verb_logs() {
+  local sub="${1:-list}"; shift 2>/dev/null || true
+
+  if [ ! -d "$LOGS_ROOT" ]; then
+    log_warn "[63] No log directory yet: $LOGS_ROOT (run something first)"
+    return 0
+  fi
+
+  case "$sub" in
+    ""|list)
+      echo ""
+      echo "Recent runs (newest first) in $LOGS_ROOT:"
+      local found=0
+      for d in $(find "$LOGS_ROOT" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' 2>/dev/null | sort -r); do
+        found=1
+        local m="$LOGS_ROOT/$d/manifest.json"
+        if [ -f "$m" ]; then
+          jq -r --arg d "$d" '"  \($d)  target=\(.target)  cmd=\(.command|tostring|.[0:60])  ok=\(.summary.ok) fail=\(.summary.fail)  dur=\(.duration_seconds)s"' "$m" 2>/dev/null \
+            || echo "  $d  (manifest unreadable)"
+        else
+          echo "  $d  (no manifest -- run may have aborted)"
+        fi
+      done
+      [ "$found" = "0" ] && echo "  (no runs recorded)"
+      if [ -L "$LOGS_ROOT/latest" ]; then
+        echo ""
+        echo "  latest -> $(readlink "$LOGS_ROOT/latest")"
+      fi
+      echo ""
+      ;;
+    show)
+      local rd; rd=$(__resolve_run_dir "${1:-}")
+      [ -n "$rd" ] || { log_err "[63] no such run: ${1:-latest}"; return 1; }
+      [ -f "$rd/session.log" ] || { log_err "[63] no session.log in $rd"; return 1; }
+      cat "$rd/session.log"
+      ;;
+    host)
+      local hname="${1:-}"; local rd; rd=$(__resolve_run_dir "${2:-}")
+      [ -n "$hname" ] || { log_err "[63] usage: logs host <name> [<run>]"; return 2; }
+      [ -n "$rd" ]    || { log_err "[63] no such run: ${2:-latest}"; return 1; }
+      local hlog="$rd/hosts/$(__safe_token "$hname").log"
+      [ -f "$hlog" ] || { log_err "[63] no host log: $hlog"; return 1; }
+      cat "$hlog"
+      ;;
+    manifest)
+      local rd; rd=$(__resolve_run_dir "${1:-}")
+      [ -n "$rd" ] || { log_err "[63] no such run: ${1:-latest}"; return 1; }
+      [ -f "$rd/manifest.json" ] || { log_err "[63] no manifest.json in $rd"; return 1; }
+      jq '.' "$rd/manifest.json"
+      ;;
+    clear)
+      printf 'Delete ALL runs in %s ? [y/N] ' "$LOGS_ROOT"
+      local ans; read -r ans
+      case "$ans" in
+        y|Y|yes|YES)
+          find "$LOGS_ROOT" -maxdepth 1 -mindepth 1 \( -type d -o -type l \) -exec rm -rf {} +
+          log_ok "[63] Cleared $LOGS_ROOT"
+          ;;
+        *) log_info "[63] Aborted -- nothing deleted." ;;
+      esac
+      ;;
+    *) log_err "[63] Unknown logs subcommand: $sub"; verb_help; return 2 ;;
+  esac
 }
 
 # ---------- entry ----------
@@ -403,6 +669,7 @@ case "${1:-help}" in
   run)        shift; verb_run "$@" ;;
   list)       verb_list ;;
   check)      shift; verb_check "$@" ;;
+  logs)       shift; verb_logs "$@" ;;
   help|-h|--help|"") verb_help ;;
   install)
     # The dispatcher calls install -- treat it as a no-op bootstrap that
