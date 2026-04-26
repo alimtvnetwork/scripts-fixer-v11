@@ -532,6 +532,11 @@ verb_help() {
     run.sh run <target> -- "<command>"   [--parallel N] [--dry-run]
     run.sh list
     run.sh check [<target>]
+    run.sh logs                       # list recent runs (newest first)
+    run.sh logs show [<run>]          # cat session.log for a run (default: latest)
+    run.sh logs host <name> [<run>]   # cat one host's log from a run
+    run.sh logs manifest [<run>]      # pretty-print manifest.json
+    run.sh logs clear                 # remove ALL run dirs (asks for confirmation)
     run.sh help
 
   Targets:
@@ -546,6 +551,10 @@ verb_help() {
     run.sh run host:db-1 -- "df -h /var/lib/postgresql"
     run.sh run web -- "hostname" --parallel 4
     run.sh run all -- "whoami" --dry-run
+    run.sh logs                       # see all past runs
+    run.sh logs show                  # session.log of newest run
+    run.sh logs host web-1 latest     # raw stdout from web-1 in newest run
+    run.sh logs manifest latest       # JSON summary of newest run
 
   Auth (per-host or defaults.auth):
     password   uses sshpass; reads from .password or prompts
@@ -556,7 +565,103 @@ verb_help() {
     Passwords are passed via SSHPASS env (never on argv).
     Use 'auth: key' for production -- password mode is for lab/training.
 
+  Log layout (per run):
+    .logs/63/<TIMESTAMP>-<target>/
+      ├── command.txt              exact command run
+      ├── target.txt               original target spec
+      ├── session.log              combined chronological output
+      ├── manifest.json            structured summary {target, hosts[], summary}
+      └── hosts/
+          ├── <name>.log           raw stdout+stderr per host
+          └── <name>.meta.json     {exit, duration_seconds, ts_start, ts_end, status}
+    .logs/63/latest -> <newest run dir>
+
 TXT
+}
+
+# ---------- verb: logs ----------
+# Resolve a run-dir argument: empty -> latest symlink; absolute -> as-is;
+# bare name -> $LOGS_ROOT/<name>; "latest" -> latest symlink target.
+__resolve_run_dir() {
+  local r="${1:-}"
+  if [ -z "$r" ] || [ "$r" = "latest" ]; then
+    if [ -L "$LOGS_ROOT/latest" ]; then
+      echo "$LOGS_ROOT/$(readlink "$LOGS_ROOT/latest")"
+    elif [ -d "$LOGS_ROOT/latest" ]; then
+      echo "$LOGS_ROOT/latest"
+    else
+      echo ""
+    fi
+    return
+  fi
+  if [ -d "$r" ]; then echo "$r"; return; fi
+  if [ -d "$LOGS_ROOT/$r" ]; then echo "$LOGS_ROOT/$r"; return; fi
+  echo ""
+}
+
+verb_logs() {
+  local sub="${1:-list}"; shift 2>/dev/null || true
+
+  if [ ! -d "$LOGS_ROOT" ]; then
+    log_warn "[63] No log directory yet: $LOGS_ROOT (run something first)"
+    return 0
+  fi
+
+  case "$sub" in
+    ""|list)
+      echo ""
+      echo "Recent runs (newest first) in $LOGS_ROOT:"
+      local found=0
+      for d in $(find "$LOGS_ROOT" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' 2>/dev/null | sort -r); do
+        found=1
+        local m="$LOGS_ROOT/$d/manifest.json"
+        if [ -f "$m" ]; then
+          jq -r --arg d "$d" '"  \($d)  target=\(.target)  cmd=\(.command|tostring|.[0:60])  ok=\(.summary.ok) fail=\(.summary.fail)  dur=\(.duration_seconds)s"' "$m" 2>/dev/null \
+            || echo "  $d  (manifest unreadable)"
+        else
+          echo "  $d  (no manifest -- run may have aborted)"
+        fi
+      done
+      [ "$found" = "0" ] && echo "  (no runs recorded)"
+      if [ -L "$LOGS_ROOT/latest" ]; then
+        echo ""
+        echo "  latest -> $(readlink "$LOGS_ROOT/latest")"
+      fi
+      echo ""
+      ;;
+    show)
+      local rd; rd=$(__resolve_run_dir "${1:-}")
+      [ -n "$rd" ] || { log_err "[63] no such run: ${1:-latest}"; return 1; }
+      [ -f "$rd/session.log" ] || { log_err "[63] no session.log in $rd"; return 1; }
+      cat "$rd/session.log"
+      ;;
+    host)
+      local hname="${1:-}"; local rd; rd=$(__resolve_run_dir "${2:-}")
+      [ -n "$hname" ] || { log_err "[63] usage: logs host <name> [<run>]"; return 2; }
+      [ -n "$rd" ]    || { log_err "[63] no such run: ${2:-latest}"; return 1; }
+      local hlog="$rd/hosts/$(__safe_token "$hname").log"
+      [ -f "$hlog" ] || { log_err "[63] no host log: $hlog"; return 1; }
+      cat "$hlog"
+      ;;
+    manifest)
+      local rd; rd=$(__resolve_run_dir "${1:-}")
+      [ -n "$rd" ] || { log_err "[63] no such run: ${1:-latest}"; return 1; }
+      [ -f "$rd/manifest.json" ] || { log_err "[63] no manifest.json in $rd"; return 1; }
+      jq '.' "$rd/manifest.json"
+      ;;
+    clear)
+      printf 'Delete ALL runs in %s ? [y/N] ' "$LOGS_ROOT"
+      local ans; read -r ans
+      case "$ans" in
+        y|Y|yes|YES)
+          find "$LOGS_ROOT" -maxdepth 1 -mindepth 1 \( -type d -o -type l \) -exec rm -rf {} +
+          log_ok "[63] Cleared $LOGS_ROOT"
+          ;;
+        *) log_info "[63] Aborted -- nothing deleted." ;;
+      esac
+      ;;
+    *) log_err "[63] Unknown logs subcommand: $sub"; verb_help; return 2 ;;
+  esac
 }
 
 # ---------- entry ----------
@@ -564,6 +669,7 @@ case "${1:-help}" in
   run)        shift; verb_run "$@" ;;
   list)       verb_list ;;
   check)      shift; verb_check "$@" ;;
+  logs)       shift; verb_logs "$@" ;;
   help|-h|--help|"") verb_help ;;
   install)
     # The dispatcher calls install -- treat it as a no-op bootstrap that
