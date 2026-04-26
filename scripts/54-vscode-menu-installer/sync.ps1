@@ -67,6 +67,10 @@ try {
     $resolvedScope = Resolve-MenuScope -Requested $Scope -IsAdmin $isAdmin
     Write-Log ("Resolved scope: requested='" + $Scope + "', resolved='" + $resolvedScope + "'") -Level "info"
 
+    # Audit log was opened before scope resolution -- back-fill the scope
+    # so every event and the change report show the correct hive.
+    Set-RegistryAuditScope -Scope $resolvedScope
+
     $isAllUsersRequested = ($Scope -ieq 'AllUsers' -or $Scope -ieq 'Machine' -or $Scope -ieq 'HKLM')
     if ($isAllUsersRequested -and -not $isAdmin) {
         Write-Log "Scope=AllUsers requires Administrator. Re-run elevated, or pass -Scope CurrentUser to sync just this user's entries." -Level "error"
