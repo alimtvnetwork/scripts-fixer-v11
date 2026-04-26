@@ -113,6 +113,7 @@ if [ "$VERB" = "list" ]; then
   printf '  %s\n' "$(printf '=%.0s' {1..70})"
   while IFS= read -r m; do
     [ -z "$m" ] && continue
+    case "$m" in _*) continue ;; esac
     label=$(_jq -r ".detectors.\"$m\".label")
     printf '  -- method: %-12s  %s\n' "$m" "$label"
     printf '     probes:\n'
@@ -168,7 +169,11 @@ fi
 
 # --------------------------------------------------------------------- detect phase
 ALL_METHODS=()
-while IFS= read -r m; do [ -n "$m" ] && ALL_METHODS+=("$m"); done < <(_jq -r '.detectors | keys[]')
+while IFS= read -r m; do
+  [ -z "$m" ] && continue
+  case "$m" in _*) continue ;; esac
+  ALL_METHODS+=("$m")
+done < <(_jq -r '.detectors | keys[]')
 
 # --only filter (intersection with detector keys)
 ONLY_IDS=()
