@@ -175,7 +175,7 @@ ensure_run_dir
 
 log_info "===== vscode-cleanup-linux (script 67) ====="
 log_info "Resolved scope: requested='$REQUESTED_SCOPE', resolved='$RESOLVED_SCOPE' (root=$IS_ROOT)."
-if [ "$VERB" != "detect" ]; then
+if [ "$VERB" != "detect" ] && [ "$VERB" != "resolve" ]; then
   if [ "$DRY_RUN" -eq 1 ]; then
     log_info "DRY-RUN mode: no changes will be made."
   else
