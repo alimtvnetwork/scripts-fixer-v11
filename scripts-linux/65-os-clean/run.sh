@@ -54,6 +54,13 @@ while [ $# -gt 0 ]; do
 done
 [ -z "$VERB" ] && VERB="run"
 
+# In --json mode, route ALL log output to stderr so stdout contains only
+# the JSON document. Re-point fd 1 -> 2 from this point on, except where
+# we explicitly print the JSON document.
+if [ "$JSON_OUT" -eq 1 ]; then
+  exec 3>&1 1>&2
+fi
+
 # ---------- bootstrap -----------------------------------------------------
 ensure_run_dir() {
   if ! mkdir -p "$RUN_DIR" 2>/dev/null; then
