@@ -38,14 +38,42 @@ function Get-HkcrSubkeyPathRC {
     return ($PsPath -replace '^Registry::HKEY_CLASSES_ROOT\\', '')
 }
 
+function Get-HiveAndSubFromRegistryPathRC {
+    <#
+    .SYNOPSIS
+        Splits a "Registry::<HIVE>\sub\path" string into the .NET RegistryKey
+        root for that hive plus the relative sub-path. Mirrors the helper
+        in vscode-check.ps1 -- duplicated here so this read-only module
+        stays standalone (no dependency on the install helper being loaded
+        first).
+    #>
+    param([Parameter(Mandatory)] [string] $PsPath)
+
+    $clean = $PsPath -replace '^Registry::', ''
+    if ($clean -like 'HKEY_CLASSES_ROOT\*') {
+        return [pscustomobject]@{ Root=[Microsoft.Win32.Registry]::ClassesRoot;  Sub=($clean -replace '^HKEY_CLASSES_ROOT\\','');  Hive='HKCR' }
+    }
+    if ($clean -like 'HKEY_CURRENT_USER\*') {
+        return [pscustomobject]@{ Root=[Microsoft.Win32.Registry]::CurrentUser;  Sub=($clean -replace '^HKEY_CURRENT_USER\\','');  Hive='HKCU' }
+    }
+    if ($clean -like 'HKEY_LOCAL_MACHINE\*') {
+        return [pscustomobject]@{ Root=[Microsoft.Win32.Registry]::LocalMachine; Sub=($clean -replace '^HKEY_LOCAL_MACHINE\\',''); Hive='HKLM' }
+    }
+    Write-Log "Unrecognised registry hive in path: '$PsPath' (failure: cannot probe; expected HKCR / HKCU / HKLM prefix)" -Level "warn"
+    return $null
+}
+
 function Get-ShellParentSubkeyRC {
     <#
     .SYNOPSIS
         Maps "Registry::HKEY_CLASSES_ROOT\Directory\shell\VSCode" to
-        the HKCR-relative parent "Directory\shell".
+        the hive-relative parent "Directory\shell". Works for HKCU and
+        HKLM-rooted paths too -- only the leading hive prefix is stripped.
     #>
     param([string]$RegistryPath)
-    $sub = Get-HkcrSubkeyPathRC $RegistryPath
+    $info = Get-HiveAndSubFromRegistryPathRC -PsPath $RegistryPath
+    if ($null -eq $info) { return $RegistryPath }
+    $sub = $info.Sub
     $idx = $sub.LastIndexOf('\')
     if ($idx -lt 0) { return $sub }
     return $sub.Substring(0, $idx)
@@ -54,16 +82,17 @@ function Get-ShellParentSubkeyRC {
 function Test-FileTargetAbsent {
     <#
     .SYNOPSIS
-        Returns $true if the file-target key (HKCR\*\shell\<Name>) does NOT
+        Returns $true if the file-target key (HKCR / HKCU\Software\Classes
+        per resolved scope) does NOT
         exist for this edition. Per repair invariant: the menu must NOT
         appear when right-clicking individual files.
     #>
     param(
         [Parameter(Mandatory)] [string] $RegistryPath
     )
-    $sub  = Get-HkcrSubkeyPathRC $RegistryPath
-    $hkcr = [Microsoft.Win32.Registry]::ClassesRoot
-    $key  = $hkcr.OpenSubKey($sub)
+    $info = Get-HiveAndSubFromRegistryPathRC -PsPath $RegistryPath
+    if ($null -eq $info) { return $true }
+    $key  = $info.Root.OpenSubKey($info.Sub)
     $isAbsent = $null -eq $key
     if (-not $isAbsent) { $key.Close() }
     return $isAbsent
@@ -73,14 +102,16 @@ function Get-SuppressionValuesPresent {
     <#
     .SYNOPSIS
         Returns the list of suppression value names actually present on
-        the given key (empty array = clean). Read-only.
+        the given key (empty array = clean). Probes the EXACT hive named
+        in $RegistryPath -- works for HKCR (AllUsers) and HKCU\Software\
+        Classes (CurrentUser) alike.
     #>
     param(
         [Parameter(Mandatory)] [string] $RegistryPath
     )
-    $sub  = Get-HkcrSubkeyPathRC $RegistryPath
-    $hkcr = [Microsoft.Win32.Registry]::ClassesRoot
-    $key  = $hkcr.OpenSubKey($sub)
+    $info = Get-HiveAndSubFromRegistryPathRC -PsPath $RegistryPath
+    if ($null -eq $info) { return @() }
+    $key  = $info.Root.OpenSubKey($info.Sub)
     if ($null -eq $key) { return @() }
     $found = @()
     try {
@@ -99,14 +130,31 @@ function Get-LegacyChildrenPresent {
     .SYNOPSIS
         Returns the list of legacy/duplicate child key names that DO exist
         under the given shell parent. Strict allow-list: only checks names
-        from $LegacyNames (never enumerates).
+        from $LegacyNames (never enumerates). Probes the hive resolved from
+        $ParentRegistryPath so it works for both HKCR (AllUsers) and HKCU\
+        Software\Classes (CurrentUser).
     #>
     param(
-        [Parameter(Mandatory)] [string]   $ParentSub,    # HKCR-relative
+        # Either an HKCR-relative sub (legacy callers) or a full
+        # "Registry::<HIVE>\sub" path (preferred). When a sub-only string
+        # is given we fall back to HKCR for backward compatibility -- new
+        # callers should always pass the full path so the hive is explicit.
+        [Parameter(Mandatory)] [string]   $ParentSub,
         [Parameter(Mandatory)] [string[]] $LegacyNames
     )
-    $hkcr = [Microsoft.Win32.Registry]::ClassesRoot
-    $parent = $hkcr.OpenSubKey($ParentSub)
+    $root   = $null
+    $subPath = $null
+    if ($ParentSub -like 'Registry::*') {
+        $info = Get-HiveAndSubFromRegistryPathRC -PsPath $ParentSub
+        if ($null -eq $info) { return @() }
+        $root    = $info.Root
+        $subPath = $info.Sub
+    } else {
+        # Backward-compat: bare HKCR-relative sub.
+        $root    = [Microsoft.Win32.Registry]::ClassesRoot
+        $subPath = $ParentSub
+    }
+    $parent = $root.OpenSubKey($subPath)
     if ($null -eq $parent) { return @() }
     $present = @()
     try {
