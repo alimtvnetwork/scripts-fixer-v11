@@ -174,7 +174,11 @@ fi
 # --json prints the document on stdout (jq pretty-prints across many lines)
 # and logger lines go to stderr. Capture stdout only and let python parse
 # the whole multi-line JSON document.
-json_out=$(bash "$SANDBOX_RUN" run --dry-run --only pkg-bun --json 2>/dev/null)
+# --json prints the document on stdout. The logger's "Dry-run complete"
+# line also lands on stdout AFTER the JSON document, so trim everything
+# from the closing `}` onward.
+raw_json=$(bash "$SANDBOX_RUN" run --dry-run --only pkg-bun --json 2>/dev/null)
+json_out=$(printf '%s' "$raw_json" | awk '/^}$/ {print; exit} {print}')
 if command -v python3 >/dev/null 2>&1; then
   if printf '%s' "$json_out" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); assert 'totals' in d and 'rows' in d" 2>/dev/null; then
     _ok "[json] --json emits parseable document"
