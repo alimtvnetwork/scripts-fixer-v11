@@ -13,12 +13,16 @@ export SCRIPT_ID="65"
 
 . "$ROOT/_shared/logger.sh"
 . "$ROOT/_shared/file-error.sh"
+. "$ROOT/_shared/confirm.sh"
+. "$ROOT/_shared/verify.sh"
 . "$SCRIPT_DIR/helpers/sweep.sh"
 . "$SCRIPT_DIR/helpers/categories.sh"
 
 CONFIG="$SCRIPT_DIR/config.json"
 LOG_MSGS="$SCRIPT_DIR/log-messages.json"
-LOGS_ROOT="$ROOT/.logs/65"
+# LOGS_OVERRIDE lets the smoke test redirect logs into a sandbox so a
+# CI run never touches the real $ROOT/.logs/65 tree.
+LOGS_ROOT="${LOGS_OVERRIDE:-$ROOT/.logs/65}"
 TS="$(date +%Y%m%d-%H%M%S)"
 RUN_DIR="$LOGS_ROOT/$TS"
 
