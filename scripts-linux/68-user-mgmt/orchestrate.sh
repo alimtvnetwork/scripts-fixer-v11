@@ -74,6 +74,8 @@ Inline flag inputs (repeatable, all optional):
 Misc:
   --dry-run                Forwarded to every leaf; nothing changes on disk
   -h | --help              This help
+  --no-verify              Skip the BEFORE/AFTER verify.sh snapshots
+  --verify-only            Run AFTER-verify only; no mutations performed
 
 Order is fixed: groups (CLI then JSON) before users (CLI then JSON).
 No business logic lives here -- all real work happens in the leaf scripts.
@@ -87,6 +89,8 @@ ORCH_USERS_JSON=""
 ORCH_DRY_RUN="${UM_DRY_RUN:-0}"
 ORCH_GROUPS_CLI=()   # entries like "name:flag1,flag2,..."
 ORCH_USERS_CLI=()
+ORCH_NO_VERIFY=0
+ORCH_VERIFY_ONLY=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -97,6 +101,8 @@ while [ $# -gt 0 ]; do
     --group)         ORCH_GROUPS_CLI+=("${2:-}"); shift 2 ;;
     --user)          ORCH_USERS_CLI+=("${2:-}");  shift 2 ;;
     --dry-run)       ORCH_DRY_RUN=1;             shift ;;
+    --no-verify)     ORCH_NO_VERIFY=1;           shift ;;
+    --verify-only)   ORCH_VERIFY_ONLY=1;         shift ;;
     --) shift; break ;;
     -*)
       log_err "unknown option: '$1' (failure: see --help for the full list)"
