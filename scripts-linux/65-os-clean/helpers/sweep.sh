@@ -6,6 +6,30 @@
 #     LockedDetails:[{Path,Reason}], Status, Notes:[] }
 #
 # CODE RED: every file/dir failure goes through log_file_error <path> <why>.
+#
+# Per-target emission (used by plan-then-confirm + final verify):
+#   When the env var SW_TARGETS_TSV is set to a writable file path, every
+#   sweep_* primitive ALSO appends one row per concrete target to that file
+#   in the schema:
+#     <status>\t<kind>\t<target>\t<bytes>\t<detail>
+#   where:
+#     status  = removed | would | missing | failed | skipped
+#     kind    = rm-file | rm-dir | apt-update | brew-cleanup | journal | <cmd>
+#     target  = absolute path OR "cmd:<argv0> <args>"
+#     bytes   = best-effort bytes attributable to this target
+#     detail  = short human reason (e.g. "preserved-by-caller", lock reason)
+#   The plan/verify stages in run.sh consume this TSV; older callers that
+#   don't set SW_TARGETS_TSV continue to work unchanged (counter-only mode).
+
+# Helper: append one row to the per-target TSV, if enabled.
+# Args: <status> <kind> <target> <bytes> [<detail>]
+_sw_emit_target() {
+  [ -n "${SW_TARGETS_TSV:-}" ] || return 0
+  local status="$1" kind="$2" target="$3" bytes="${4:-0}" detail="${5:-}"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$status" "$kind" "$target" "$bytes" "$detail" \
+    >> "$SW_TARGETS_TSV" \
+    || log_file_error "$SW_TARGETS_TSV" "failed to append target row (kind=$kind target=$target)"
+}
 
 # ---------- byte counting -------------------------------------------------
 # Total bytes for a single path (file or dir). Returns 0 if path is missing
@@ -76,10 +100,12 @@ sweep_contents() {
   if [ ! -e "$path" ]; then
     _SW_NOTES="${_SW_NOTES}Path not present: ${path}
 "
+    _sw_emit_target "missing" "rm-dir" "$path" 0 "directory absent before sweep"
     return 0
   fi
   if [ ! -d "$path" ]; then
     log_file_error "$path" "expected directory, got non-dir entry"
+    _sw_emit_target "failed" "rm-dir" "$path" 0 "expected directory; non-dir on disk"
     return 1
   fi
 
@@ -102,15 +128,24 @@ sweep_contents() {
 
   local entry rc err
   while IFS= read -r -d '' entry; do
+    local entry_kind="rm-file"
+    [ -d "$entry" ] && entry_kind="rm-dir"
+    local entry_bytes
+    entry_bytes=$(sweep_size_bytes "$entry")
     if [ "$dry_run" = "1" ]; then
       _SW_COUNT=$((_SW_COUNT + 1))
+      _sw_emit_target "would" "$entry_kind" "$entry" "$entry_bytes" "in $path"
       continue
     fi
     err=$(rm -rf -- "$entry" 2>&1); rc=$?
     if [ "$rc" -eq 0 ]; then
       _SW_COUNT=$((_SW_COUNT + 1))
+      _sw_emit_target "removed" "$entry_kind" "$entry" "$entry_bytes" "in $path"
     else
-      _sw_add_lock "$entry" "$(_sw_classify_err "$err")"
+      local lock_reason
+      lock_reason=$(_sw_classify_err "$err")
+      _sw_add_lock "$entry" "$lock_reason"
+      _sw_emit_target "failed" "$entry_kind" "$entry" 0 "$lock_reason"
     fi
   done < <(find "${find_args[@]}" -print0 2>/dev/null)
 
@@ -150,6 +185,7 @@ sweep_glob() {
     if [ ! -d "$root_for_glob" ]; then
       _SW_NOTES="${_SW_NOTES}Root not present: ${root_for_glob}
 "
+      _sw_emit_target "missing" "rm-dir" "$root_for_glob" 0 "glob root absent (pattern=$pattern)"
       return 0
     fi
     while IFS= read -r -d '' entry; do
@@ -168,21 +204,31 @@ sweep_glob() {
   if [ "${#matches[@]}" -eq 0 ]; then
     _SW_NOTES="${_SW_NOTES}No matches for pattern: ${pattern}
 "
+    _sw_emit_target "missing" "rm-file" "$pattern" 0 "no glob matches"
     return 0
   fi
 
   for entry in "${matches[@]}"; do
     [ -e "$entry" ] || continue
-    before=$((before + $(sweep_size_bytes "$entry")))
+    local entry_bytes
+    entry_bytes=$(sweep_size_bytes "$entry")
+    before=$((before + entry_bytes))
+    local entry_kind="rm-file"
+    [ -d "$entry" ] && entry_kind="rm-dir"
     if [ "$dry_run" = "1" ]; then
       _SW_COUNT=$((_SW_COUNT + 1))
+      _sw_emit_target "would" "$entry_kind" "$entry" "$entry_bytes" "match for $pattern"
       continue
     fi
     err=$(rm -rf -- "$entry" 2>&1); rc=$?
     if [ "$rc" -eq 0 ]; then
       _SW_COUNT=$((_SW_COUNT + 1))
+      _sw_emit_target "removed" "$entry_kind" "$entry" "$entry_bytes" "match for $pattern"
     else
-      _sw_add_lock "$entry" "$(_sw_classify_err "$err")"
+      local lock_reason
+      lock_reason=$(_sw_classify_err "$err")
+      _sw_add_lock "$entry" "$lock_reason"
+      _sw_emit_target "failed" "$entry_kind" "$entry" 0 "$lock_reason"
     fi
   done
 
@@ -206,6 +252,14 @@ sweep_command() {
   local size_path="$1"; shift
   local before after rc out
   before=$(sweep_size_bytes "$size_path" 2>/dev/null || echo 0)
+  local cmd_kind="$1"
+  local target_label="cmd:$*"
+  # NOTE: in dry-run mode the caller passes the config's `dryCmd` (e.g.
+  # `apt-get clean --simulate`), which is itself a safe simulation. We
+  # still execute it so we get a real exit code + stderr, but we tag the
+  # emitted target row as "would" instead of "removed".
+  local emit_status="removed"
+  [ "${SW_DRY_RUN:-0}" = "1" ] && emit_status="would"
   out=$("$@" 2>&1); rc=$?
   after=$(sweep_size_bytes "$size_path" 2>/dev/null || echo 0)
   local freed=$((before - after))
@@ -214,10 +268,12 @@ sweep_command() {
   if [ "$rc" -eq 0 ]; then
     # Success: count the call as 1 logical "item" for parity with sweep counts.
     [ "$freed" -gt 0 ] && _SW_COUNT=$((_SW_COUNT + 1))
+    _sw_emit_target "$emit_status" "$cmd_kind" "$target_label" "$freed" "exit=0 freed=${freed}B size_path=${size_path:-?}"
   else
     _SW_LOCKED=$((_SW_LOCKED + 1))
     _SW_LOCKS="${_SW_LOCKS}cmd:$*|exit=${rc}: $(printf '%s' "$out" | head -c 200)
 "
+    _sw_emit_target "failed" "$cmd_kind" "$target_label" 0 "exit=${rc}: $(printf '%s' "$out" | head -c 80)"
   fi
   printf '%s' "$out"
   return "$rc"

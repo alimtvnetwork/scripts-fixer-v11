@@ -13,12 +13,16 @@ export SCRIPT_ID="65"
 
 . "$ROOT/_shared/logger.sh"
 . "$ROOT/_shared/file-error.sh"
+. "$ROOT/_shared/confirm.sh"
+. "$ROOT/_shared/verify.sh"
 . "$SCRIPT_DIR/helpers/sweep.sh"
 . "$SCRIPT_DIR/helpers/categories.sh"
 
 CONFIG="$SCRIPT_DIR/config.json"
 LOG_MSGS="$SCRIPT_DIR/log-messages.json"
-LOGS_ROOT="$ROOT/.logs/65"
+# LOGS_OVERRIDE lets the smoke test redirect logs into a sandbox so a
+# CI run never touches the real $ROOT/.logs/65 tree.
+LOGS_ROOT="${LOGS_OVERRIDE:-$ROOT/.logs/65}"
 TS="$(date +%Y%m%d-%H%M%S)"
 RUN_DIR="$LOGS_ROOT/$TS"
 
@@ -178,7 +182,16 @@ fi
 
 # Per-category result rows accumulated for the manifest.
 ROWS_TSV="$RUN_DIR/rows.tsv"   # status \t cat \t label \t bucket \t count \t bytes \t locked
+# Per-target rows from the sweep helpers, populated when SW_TARGETS_TSV is
+# exported (see helpers/sweep.sh). Used to build PLAN_TSV (for confirm)
+# and to feed _shared/verify.sh.
+TARGETS_TSV="$RUN_DIR/targets.tsv"  # status \t kind \t target \t bytes \t detail
+PLAN_TSV="$RUN_DIR/plan.tsv"        # bucket \t kind \t target \t detail
+VERIFY_TSV="$RUN_DIR/verify.tsv"    # populated by verify_run
 : > "$ROWS_TSV"
+: > "$TARGETS_TSV" || log_file_error "$TARGETS_TSV" "failed to truncate targets TSV"
+: > "$PLAN_TSV"    || log_file_error "$PLAN_TSV"    "failed to truncate plan TSV"
+export SW_TARGETS_TSV="$TARGETS_TSV"
 
 TOTAL_COUNT=0
 TOTAL_BYTES=0
@@ -306,14 +319,106 @@ _run_category() {
   _emit_row "$status" "$cat" "$label" "$bucket" "$_SW_COUNT" "$_SW_BYTES" "$_SW_LOCKED"
 }
 
-# Iterate categories.
-while IFS= read -r cat; do
-  [ -z "$cat" ] && continue
-  _run_category "$cat" || log_warn "Category '$cat' raised an error -- continuing."
-done < <(osc_category_ids)
+# Iterate categories. Wrapped in a function so plan-then-confirm can run
+# the loop twice: once in forced dry-run to build the plan, once in apply
+# to actually do the work.
+_iterate_all_categories() {
+  : > "$ROWS_TSV"     || log_file_error "$ROWS_TSV"     "failed to truncate rows TSV"
+  : > "$TARGETS_TSV"  || log_file_error "$TARGETS_TSV"  "failed to truncate targets TSV"
+  TOTAL_COUNT=0
+  TOTAL_BYTES=0
+  TOTAL_LOCKED=0
+  while IFS= read -r cat; do
+    [ -z "$cat" ] && continue
+    _run_category "$cat" || log_warn "Category '$cat' raised an error -- continuing."
+  done < <(osc_category_ids)
+}
+
+# ---------- plan -> confirm -> apply phasing -------------------------------
+# Behaviour:
+#   * --dry-run        -> single dry-run pass, no plan/confirm wrapper
+#   * apply (default)  -> forced dry-run pass first (PLAN), render plan tree
+#                         + table, prompt operator (or honour --yes), then
+#                         reset and run the real APPLY pass.
+# Aborting at the prompt leaves the plan TSV on disk for inspection and
+# skips the verify phase (nothing was applied).
+APPLY_ABORTED=0
+if [ "$DRY_RUN" -eq 1 ]; then
+  log_info "===== single dry-run pass (no plan/confirm wrapper needed) ====="
+  _iterate_all_categories
+else
+  log_info "===== plan phase -- nothing will be removed yet ====="
+  SW_DRY_RUN=1; export SW_DRY_RUN
+  _iterate_all_categories
+
+  # Convert TARGETS_TSV (status\tkind\ttarget\tbytes\tdetail) into the
+  # PLAN_TSV schema confirm_render_plan expects (bucket\tkind\ttarget\tdetail).
+  # 65's per-target rows are not category-tagged at the sweep layer; we
+  # default the bucket to "user" (correct for the vast majority of
+  # categories) and override to "command" for command-driven targets that
+  # are emitted with a "cmd:..." synthetic target name.
+  : > "$PLAN_TSV"
+  while IFS=$'\t' read -r status kind target bytes detail; do
+    [ "$status" = "would" ] || continue
+    # Heuristic bucket: command-driven targets (target prefix "cmd:") fall
+    # under the bucket of their owning category, but since 65 doesn't tag
+    # them in the TARGETS_TSV directly we default to "user" (matches the
+    # vast majority of categories) and let the operator inspect the
+    # detail column.
+    plan_bucket="user"
+    case "$target" in cmd:*) plan_bucket="command" ;; esac
+    confirm_plan_add "$PLAN_TSV" "$plan_bucket" "$kind" "$target" "$detail"
+  done < "$TARGETS_TSV"
+
+  confirm_render_plan "$PLAN_TSV" "Planned os-clean actions"
+
+  if ! confirm_prompt "$PLAN_TSV" "$ASSUME_YES"; then
+    log_warn "Apply phase aborted. The plan above was NOT executed."
+    log_info "Plan file kept for inspection: $PLAN_TSV"
+    APPLY_ABORTED=1
+    MODE_LABEL="aborted"
+  else
+    log_info "===== apply phase ====="
+    SW_DRY_RUN=0; export SW_DRY_RUN
+    _iterate_all_categories
+  fi
+fi
+
+# ---------- verify --------------------------------------------------------
+# Independent post-cleanup verification. Re-probes every removed/would
+# target (file or dir) using _shared/verify.sh and emits a pass/fail
+# report. Skipped only when the operator aborted at the prompt
+# (APPLY_ABORTED=1) -- in dry-run we still verify so the operator can
+# see "would these targets actually be gone if I applied?".
+VERIFY_PASSES=0; VERIFY_FAILS=0; VERIFY_SKIPS=0
+_mode_for_verify="$MODE_LABEL"
+if [ "$APPLY_ABORTED" = "1" ]; then
+  log_info "===== verify phase skipped (run aborted at confirmation prompt) ====="
+else
+  log_info "===== verify phase (re-probing every targeted item) ====="
+  # Reshape TARGETS_TSV (status\tkind\ttarget\tbytes\tdetail) into the
+  # verify_run input schema (status\tbucket\tkind\ttarget\tdetail).
+  verify_input="$RUN_DIR/verify-input.tsv"
+  : > "$verify_input" || log_file_error "$verify_input" "failed to truncate verify-input TSV"
+  while IFS=$'\t' read -r vs vk vt vb vd; do
+    [ -z "$vs" ] && continue
+    vbucket="user"
+    case "$vt" in cmd:*) vbucket="command" ;; esac
+    printf '%s\t%s\t%s\t%s\t%s\n' "$vs" "$vbucket" "$vk" "$vt" "$vd" >> "$verify_input"
+  done < "$TARGETS_TSV"
+  verify_run    "$verify_input" "$VERIFY_TSV" "$_mode_for_verify"
+  verify_render "$VERIFY_TSV"   "os-clean verification report"
+fi
 
 # ---------- summary -------------------------------------------------------
 human_total=$(sweep_human_bytes "$TOTAL_BYTES")
+
+# verify_run (above) already populated $VERIFY_PASSES / $VERIFY_FAILS /
+# $VERIFY_SKIPS as side-effect globals, so we just default them when
+# verification was skipped (aborted run) and surface them in the summary.
+VERIFY_PASSES="${VERIFY_PASSES:-0}"
+VERIFY_FAILS="${VERIFY_FAILS:-0}"
+VERIFY_SKIPS="${VERIFY_SKIPS:-0}"
 
 if [ "$JSON_OUT" -eq 1 ]; then
   # Emit a single JSON document on the original stdout (fd 3 was opened
@@ -349,14 +454,25 @@ if [ "$JSON_OUT" -eq 1 ]; then
   fi
 else
   printf '\n  ===== summary (%s) =====\n' "$MODE_LABEL"
-  printf '  %-7s  %-22s  %-38s  %6s  %12s\n' "STATUS" "CATEGORY" "LABEL" "ITEMS" "BYTES"
-  printf '  %s\n' "$(printf '%.0s-' {1..95})"
+  printf '  %-7s  %-22s  %-38s  %6s  %12s  %8s\n' "STATUS" "CATEGORY" "LABEL" "ITEMS" "BYTES" "VERIFIED"
+  printf '  %s\n' "$(printf '%.0s-' {1..104})"
   while IFS=$'\t' read -r s c l b cnt by lk; do
     bh=$(sweep_human_bytes "$by")
-    printf '  %-7s  %-22s  %-38s  %6s  %12s\n' "$s" "$c" "$l" "$cnt" "$bh"
+    # Per-category verified marker: PASS if every targeted path under this
+    # category passed re-probe, FAIL if any failed, "-" if no verify rows.
+    vmark="-"
+    if [ -s "$VERIFY_TSV" ]; then
+      cat_fails=$(awk -F'\t' -v c="$c" '$1=="fail" && index($4, c) > 0 {n++} END{print n+0}' "$VERIFY_TSV" 2>/dev/null || echo 0)
+      cat_pass=$(awk -F'\t' -v c="$c"  '$1=="pass" && index($4, c) > 0 {n++} END{print n+0}' "$VERIFY_TSV" 2>/dev/null || echo 0)
+      if [ "$cat_fails" -gt 0 ]; then vmark="FAIL($cat_fails)"
+      elif [ "$cat_pass" -gt 0 ]; then vmark="PASS($cat_pass)"
+      fi
+    fi
+    printf '  %-7s  %-22s  %-38s  %6s  %12s  %8s\n' "$s" "$c" "$l" "$cnt" "$bh" "$vmark"
   done < "$ROWS_TSV"
-  printf '  %s\n' "$(printf '%.0s-' {1..95})"
-  printf '  TOTAL: %s item(s), %s (locked: %s)\n\n' "$TOTAL_COUNT" "$human_total" "$TOTAL_LOCKED"
+  printf '  %s\n' "$(printf '%.0s-' {1..104})"
+  printf '  TOTAL: %s item(s), %s (locked: %s)\n' "$TOTAL_COUNT" "$human_total" "$TOTAL_LOCKED"
+  printf '  VERIFY: pass=%s fail=%s skipped=%s\n\n' "$VERIFY_PASSES" "$VERIFY_FAILS" "$VERIFY_SKIPS"
 fi
 
 # Always write the manifest, regardless of stdout mode.
@@ -372,7 +488,21 @@ manifest="$RUN_DIR/manifest.json"
     printf '{"status":"%s","category":"%s","label":"%s","bucket":"%s","count":%s,"bytes":%s,"locked":%s}' \
       "$s" "$c" "$l_esc" "$b" "$cnt" "$by" "$lk"
   done < "$ROWS_TSV"
-  printf ']}\n'
+  printf '],"verification":{"pass":%s,"fail":%s,"skipped":%s,"rows":[' \
+    "$VERIFY_PASSES" "$VERIFY_FAILS" "$VERIFY_SKIPS"
+  vfirst=1
+  if [ -s "$VERIFY_TSV" ]; then
+    while IFS=$'\t' read -r vr vbk vk vt vd; do
+      [ -z "$vr" ] && continue
+      [ "$vfirst" -eq 1 ] || printf ','
+      vfirst=0
+      vt_esc=$(printf '%s' "$vt" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      vd_esc=$(printf '%s' "$vd" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      printf '{"result":"%s","bucket":"%s","kind":"%s","target":"%s","detail":"%s"}' \
+        "$vr" "$vbk" "$vk" "$vt_esc" "$vd_esc"
+    done < "$VERIFY_TSV"
+  fi
+  printf ']}}\n'
 } > "$manifest" 2>/dev/null \
   || log_file_error "$manifest" "manifest write failed"
 
