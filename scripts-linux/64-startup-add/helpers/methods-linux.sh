@@ -166,27 +166,36 @@ write_shell_rc_env() {
   local rc;     rc=$(detect_shell_rc)
   local marker_start="# >>> ${STARTUP_TAG_PREFIX}-env (managed) >>>"
   local marker_end="# <<< ${STARTUP_TAG_PREFIX}-env <<<"
-  local export_line; export_line=$(printf 'export %s=%q' "$key" "$value")
+  # Always single-quote the value so spaces/specials survive sourcing.
+  # Escape any embedded single quotes via the bash '\'' idiom.
+  local escaped="${value//\'/\'\\\'\'}"
+  local export_line="export ${key}='${escaped}'"
 
   _ensure_dir "$(dirname "$rc")" || return 1
   [ -f "$rc" ] || { : > "$rc" || { log_file_error "$rc" "create failed"; return 1; }; }
 
   if grep -Fq "$marker_start" "$rc" 2>/dev/null; then
-    # Block exists: replace just the line for THIS key inside the block.
-    if ! awk -v s="$marker_start" -v e="$marker_end" -v key="$key" -v line="$export_line" '
-      BEGIN{ inblock=0; replaced=0 }
+    # Block exists. Strategy:
+    #   1. awk strips the closing marker and any existing `export KEY=...`
+    #      line inside the block.
+    #   2. shell printf re-emits the new export_line + closing marker
+    #      (so awk's -v handling never touches the literal value text).
+    if ! awk -v s="$marker_start" -v e="$marker_end" -v key="$key" '
+      BEGIN{ inblock=0 }
       $0==s { print; inblock=1; next }
-      $0==e {
-        if (inblock && !replaced) { print line; replaced=1 }
-        print; inblock=0; next
-      }
-      inblock && $0 ~ ("^export "key"=") { print line; replaced=1; next }
+      $0==e { inblock=0; next }   # drop closing marker; we re-emit
+      inblock && $0 ~ ("^export "key"=") { next }
       { print }
     ' "$rc" > "$rc.tmp"; then
       log_file_error "$rc.tmp" "awk env-replace failed"
       rm -f "$rc.tmp" 2>/dev/null
       return 1
     fi
+    {
+      printf '%s\n' "$export_line"
+      printf '%s\n' "$marker_end"
+    } >> "$rc.tmp" 2>/dev/null \
+        || { log_file_error "$rc.tmp" "env append-after-strip failed"; rm -f "$rc.tmp"; return 1; }
     mv "$rc.tmp" "$rc" || { log_file_error "$rc" "mv from tmp failed"; return 1; }
   else
     # Create the block at end of file
