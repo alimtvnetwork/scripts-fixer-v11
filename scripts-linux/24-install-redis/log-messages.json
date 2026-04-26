@@ -1,0 +1,11 @@
+{ "description": "Log messages for 24-install-redis",
+  "messages": {
+    "start":           "[24] Starting Redis Server installer",
+    "alreadyInstalled":"[24] Redis already installed",
+    "installing":      "[24] Installing redis-server via apt",
+    "installSuccess":  "[24] Redis installed",
+    "verifyOk":        "[24] redis-server detected: {detail}",
+    "verifyFail":      "[24] redis-server not on PATH",
+    "noMethod":        "[24] apt not available"
+  }
+}
