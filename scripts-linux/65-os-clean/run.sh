@@ -413,24 +413,12 @@ fi
 # ---------- summary -------------------------------------------------------
 human_total=$(sweep_human_bytes "$TOTAL_BYTES")
 
-# Per-category verified counts (PASS/FAIL/SKIP) joined onto the per-row table.
-# We tally by the longest category-name prefix that matches the target's
-# first path component or "cmd:..." token. Cheaper + good enough for the
-# operator-facing summary; the authoritative breakdown lives in verify.tsv.
-declare -A _CAT_VPASS _CAT_VFAIL _CAT_VSKIP
-if [ -s "$VERIFY_TSV" ]; then
-  while IFS=$'\t' read -r vresult vbucket vkind vtarget vdetail; do
-    [ -z "$vresult" ] && continue
-    # Find which category this target belongs to by re-scanning ROWS_TSV
-    # is overkill; we just bin by the result for the global summary line
-    # and let verify.tsv carry the per-target detail.
-    case "$vresult" in
-      pass)        VERIFY_PASSES=$((VERIFY_PASSES+1)) ;;
-      fail)        VERIFY_FAILS=$((VERIFY_FAILS+1)) ;;
-      skip*|skipped) VERIFY_SKIPS=$((VERIFY_SKIPS+1)) ;;
-    esac
-  done < "$VERIFY_TSV"
-fi
+# verify_run (above) already populated $VERIFY_PASSES / $VERIFY_FAILS /
+# $VERIFY_SKIPS as side-effect globals, so we just default them when
+# verification was skipped (aborted run) and surface them in the summary.
+VERIFY_PASSES="${VERIFY_PASSES:-0}"
+VERIFY_FAILS="${VERIFY_FAILS:-0}"
+VERIFY_SKIPS="${VERIFY_SKIPS:-0}"
 
 if [ "$JSON_OUT" -eq 1 ]; then
   # Emit a single JSON document on the original stdout (fd 3 was opened
