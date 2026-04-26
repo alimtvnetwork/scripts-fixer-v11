@@ -169,7 +169,17 @@ run_on_host() {
     log_err "[63] Unknown host or group: '$name'"
     return 2
   fi
-  IFS=$'\t' read -r h_name h_host h_user h_port h_auth h_pw h_id h_to <<<"$rec"
+  # Read 8 newline-separated fields from host_record (empty fields preserved).
+  local h_name h_host h_user h_port h_auth h_pw h_id h_to
+  { IFS= read -r h_name
+    IFS= read -r h_host
+    IFS= read -r h_user
+    IFS= read -r h_port
+    IFS= read -r h_auth
+    IFS= read -r h_pw
+    IFS= read -r h_id
+    IFS= read -r h_to
+  } <<<"$rec"
 
   if [ "$dry" = "1" ]; then
     log_info "[63] [DRY-RUN] would run on $h_name ($h_user@$h_host:$h_port): $cmd"
