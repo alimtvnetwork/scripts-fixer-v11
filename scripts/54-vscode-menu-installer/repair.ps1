@@ -67,7 +67,9 @@ try {
     }
 
     # -- Audit log + pre-repair snapshot -------------------------------------
-    $auditPath = Initialize-RegistryAudit -Action "install" -ScriptDir $scriptDir
+    # Repair resolves scope BEFORE opening the audit, so we can stamp it
+    # into the session-start header directly.
+    $auditPath = Initialize-RegistryAudit -Action "install" -ScriptDir $scriptDir -Scope $resolvedScope
     $snapshotPath = New-PreInstallSnapshot -Config $config -ScriptDir $scriptDir
     $hasSnapshot = -not [string]::IsNullOrWhiteSpace($snapshotPath)
     if ($hasSnapshot) {
