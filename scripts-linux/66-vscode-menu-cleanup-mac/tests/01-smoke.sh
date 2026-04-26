@@ -129,9 +129,9 @@ grep -q "Confirmation skipped: --yes"        "$SANDBOX/apply.out"; _assert "appl
 [ "$RC_APPLY" -eq 0 ]; _assert "apply exit code = 0" $?
 
 # Manifest exists + contains the surfaces we exercised.
-manifest="$(ls -1 "$SCRIPT_ROOT/../.logs/66/"*/manifest.json 2>/dev/null | tail -n 1)"
+manifest="$(ls -1 "$SANDBOX/logs/"*/manifest.json 2>/dev/null | tail -n 1)"
 if [ -z "$manifest" ] || [ ! -f "$manifest" ]; then
-  echo "  FAIL manifest written (looked for: $SCRIPT_ROOT/../.logs/66/*/manifest.json)"
+  echo "  FAIL manifest written (looked for: $SANDBOX/logs/*/manifest.json)"
   fail=$((fail+1))
 else
   echo "  PASS manifest written ($manifest)"; pass=$((pass+1))
