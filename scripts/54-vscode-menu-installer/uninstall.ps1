@@ -68,7 +68,7 @@ try {
     Write-Log $logMessages.messages.uninstallStart -Level "info"
 
     # -- Open audit log (timestamped, one file per run) ----------------------
-    $auditPath = Initialize-RegistryAudit -Action "uninstall" -ScriptDir $scriptDir
+    $auditPath = Initialize-RegistryAudit -Action "uninstall" -ScriptDir $scriptDir -Scope $resolvedScope
 
     $editions = if ([string]::IsNullOrWhiteSpace($Edition)) {
         @($config.enabledEditions)
