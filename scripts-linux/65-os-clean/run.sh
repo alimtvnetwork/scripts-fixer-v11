@@ -454,14 +454,25 @@ if [ "$JSON_OUT" -eq 1 ]; then
   fi
 else
   printf '\n  ===== summary (%s) =====\n' "$MODE_LABEL"
-  printf '  %-7s  %-22s  %-38s  %6s  %12s\n' "STATUS" "CATEGORY" "LABEL" "ITEMS" "BYTES"
-  printf '  %s\n' "$(printf '%.0s-' {1..95})"
+  printf '  %-7s  %-22s  %-38s  %6s  %12s  %8s\n' "STATUS" "CATEGORY" "LABEL" "ITEMS" "BYTES" "VERIFIED"
+  printf '  %s\n' "$(printf '%.0s-' {1..104})"
   while IFS=$'\t' read -r s c l b cnt by lk; do
     bh=$(sweep_human_bytes "$by")
-    printf '  %-7s  %-22s  %-38s  %6s  %12s\n' "$s" "$c" "$l" "$cnt" "$bh"
+    # Per-category verified marker: PASS if every targeted path under this
+    # category passed re-probe, FAIL if any failed, "-" if no verify rows.
+    vmark="-"
+    if [ -s "$VERIFY_TSV" ]; then
+      cat_fails=$(awk -F'\t' -v c="$c" '$1=="fail" && index($4, c) > 0 {n++} END{print n+0}' "$VERIFY_TSV" 2>/dev/null || echo 0)
+      cat_pass=$(awk -F'\t' -v c="$c"  '$1=="pass" && index($4, c) > 0 {n++} END{print n+0}' "$VERIFY_TSV" 2>/dev/null || echo 0)
+      if [ "$cat_fails" -gt 0 ]; then vmark="FAIL($cat_fails)"
+      elif [ "$cat_pass" -gt 0 ]; then vmark="PASS($cat_pass)"
+      fi
+    fi
+    printf '  %-7s  %-22s  %-38s  %6s  %12s  %8s\n' "$s" "$c" "$l" "$cnt" "$bh" "$vmark"
   done < "$ROWS_TSV"
-  printf '  %s\n' "$(printf '%.0s-' {1..95})"
-  printf '  TOTAL: %s item(s), %s (locked: %s)\n\n' "$TOTAL_COUNT" "$human_total" "$TOTAL_LOCKED"
+  printf '  %s\n' "$(printf '%.0s-' {1..104})"
+  printf '  TOTAL: %s item(s), %s (locked: %s)\n' "$TOTAL_COUNT" "$human_total" "$TOTAL_LOCKED"
+  printf '  VERIFY: pass=%s fail=%s skipped=%s\n\n' "$VERIFY_PASSES" "$VERIFY_FAILS" "$VERIFY_SKIPS"
 fi
 
 # Always write the manifest, regardless of stdout mode.
