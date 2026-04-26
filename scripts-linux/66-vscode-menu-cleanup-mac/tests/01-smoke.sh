@@ -113,8 +113,10 @@ _assert() {
 [ "$RC_DRY" -eq 0 ]; _assert "dry-run exit code = 0" $?
 
 echo "--- apply ---"
-bash "$SCRIPT_ROOT/run.sh"           --scope user --no-color > "$SANDBOX/apply.out" 2>&1
+bash "$SCRIPT_ROOT/run.sh"           --scope user --no-color --yes > "$SANDBOX/apply.out" 2>&1
 RC_APPLY=$?
+grep -q "Planned macOS VS Code menu cleanup" "$SANDBOX/apply.out"; _assert "apply rendered plan tree before deleting" $?
+grep -q "Confirmation skipped: --yes"        "$SANDBOX/apply.out"; _assert "apply honored --yes" $?
 
 # --- assertions ----------------------------------------------------------
 # Apply: VS Code targets gone, decoys preserved.
