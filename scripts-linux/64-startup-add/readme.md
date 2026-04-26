@@ -57,6 +57,30 @@ Mirrors the Windows-side `scripts/os/` startup block.
 ./run.sh -I 64 -- remove EDITOR --method shell-rc-env
 ```
 
+## Machine-readable output
+
+`list` defaults to a human table. Pass `--json` (or `--format=json`) for a
+stable JSON document you can pipe into `jq`, scripts, or CI:
+
+```bash
+./run.sh -I 64 -- list --json
+```
+
+```json
+{
+  "tag": "lovable-startup",
+  "count": 2,
+  "entries": [
+    { "method": "autostart",    "name": "demo",   "path": "/home/u/.config/autostart/lovable-startup-demo.desktop", "scope": "user" },
+    { "method": "shell-rc-env", "name": "EDITOR", "path": "/home/u/.bashrc",                                          "scope": "user" }
+  ]
+}
+```
+
+Schema is stable: `tag` (string), `count` (number), `entries[]` of
+`{method, name, path, scope}` strings. Empty list returns
+`{"tag":"...","count":0,"entries":[]}` with exit 0.
+
 ## Tag convention
 
 Every entry this script writes is tagged with the prefix `lovable-startup` so
