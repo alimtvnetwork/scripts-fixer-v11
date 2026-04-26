@@ -1,0 +1,25 @@
+{
+  "description": "Log messages for 62-install-zsh-clear",
+  "messages": {
+    "start":              "[62] Starting safer ZSH uninstall (restore + surgical strip)",
+    "preBackedUp":        "[62] Pre-clear safety backup: {src} -> {dst}",
+    "backupRootMissing":  "[62] Backup root {dir} does not exist -- nothing to restore",
+    "noBackupsFound":     "[62] No timestamped backups found under {dir}",
+    "backupSelected":     "[62] Selected backup: {dir} (timestamp {ts})",
+    "backupRestored":     "[62] Restored {src} -> {dst}",
+    "noZshrcInBackup":    "[62] Backup {dir} contains no .zshrc -- nothing to restore",
+    "stripped":           "[62] Stripped marker block '{name}' from {file} ({n} lines removed)",
+    "stripNoBlock":       "[62] No '{name}' marker block found in {file} -- skipping",
+    "stripNoFile":        "[62] {file} does not exist -- skipping marker strip",
+    "removeZshrc":        "[62] Removed {file}",
+    "removeOmz":          "[62] Removed {dir}",
+    "aptRemoveZsh":       "[62] apt-get purge zsh requested",
+    "chshDone":           "[62] Default shell restored to {shell}",
+    "chshSkipped":        "[62] Default shell restore skipped (aggressive.restore_default_shell=false)",
+    "markerCleared":      "[62] Cleared install marker {file}",
+    "doneSafe":           "[62] Done (safe mode). Open a new shell to verify.",
+    "doneAggressive":     "[62] Done (aggressive mode applied: {flags})",
+    "checkOk":            "[62] No lovable marker blocks present in ~/.zshrc",
+    "checkResidual":      "[62] Residual marker block(s) still present in ~/.zshrc: {names}"
+  }
+}
