@@ -182,7 +182,16 @@ fi
 
 # Per-category result rows accumulated for the manifest.
 ROWS_TSV="$RUN_DIR/rows.tsv"   # status \t cat \t label \t bucket \t count \t bytes \t locked
+# Per-target rows from the sweep helpers, populated when SW_TARGETS_TSV is
+# exported (see helpers/sweep.sh). Used to build PLAN_TSV (for confirm)
+# and to feed _shared/verify.sh.
+TARGETS_TSV="$RUN_DIR/targets.tsv"  # status \t kind \t target \t bytes \t detail
+PLAN_TSV="$RUN_DIR/plan.tsv"        # bucket \t kind \t target \t detail
+VERIFY_TSV="$RUN_DIR/verify.tsv"    # populated by verify_run
 : > "$ROWS_TSV"
+: > "$TARGETS_TSV" || log_file_error "$TARGETS_TSV" "failed to truncate targets TSV"
+: > "$PLAN_TSV"    || log_file_error "$PLAN_TSV"    "failed to truncate plan TSV"
+export SW_TARGETS_TSV="$TARGETS_TSV"
 
 TOTAL_COUNT=0
 TOTAL_BYTES=0
