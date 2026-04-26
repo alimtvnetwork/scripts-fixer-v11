@@ -268,8 +268,12 @@ case "${VERB:-help}" in
     bash "$ROOT/66-vscode-menu-cleanup-mac/run.sh" "$VSCMAC_SUB" "${VSCMAC_REST[@]:-}"
     ;;
   vsclin-passthrough)
-    if [ "${#VSCLIN_REST[@]}" -gt 0 ]; then
-      bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB" "${VSCLIN_REST[@]}"
+    # Filter out a stray empty element that some bash versions add when "$@"
+    # was empty at the time VSCLIN_REST=("$@") was set.
+    _vsclin_filtered=()
+    for _a in "${VSCLIN_REST[@]:-}"; do [ -n "$_a" ] && _vsclin_filtered+=("$_a"); done
+    if [ "${#_vsclin_filtered[@]}" -gt 0 ]; then
+      bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB" "${_vsclin_filtered[@]}"
     else
       bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB"
     fi
