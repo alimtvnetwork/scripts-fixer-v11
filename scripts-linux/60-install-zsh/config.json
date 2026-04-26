@@ -1,0 +1,20 @@
+{
+  "description": "Install zsh + Oh-My-Zsh, deploy curated .zshrc, auto-backup existing config.",
+  "install": {
+    "apt": "zsh git curl wget"
+  },
+  "default_theme": "robbyrussell",
+  "plugins": ["git", "z", "sudo", "history", "command-not-found", "zsh-autosuggestions"],
+  "custom_plugins": [
+    {
+      "name": "zsh-autosuggestions",
+      "repo": "https://github.com/zsh-users/zsh-autosuggestions",
+      "dest": "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-autosuggestions"
+    }
+  ],
+  "deploy_zshrc": true,
+  "deploy_extras": true,
+  "backup_existing_zshrc": true,
+  "set_default_shell": false,
+  "omz_install_url": "https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh"
+}

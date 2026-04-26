@@ -1,0 +1,25 @@
+{
+  "description": "Log messages for 60-install-zsh",
+  "messages": {
+    "start":               "[60] Starting Oh-My-Zsh installer flow",
+    "aptInstalling":       "[60] Installing apt packages: {pkg}",
+    "aptInstallFailed":    "[60] apt install failed for: {pkg}",
+    "omzInstalling":       "[60] Installing Oh-My-Zsh (unattended) from {url}",
+    "omzAlready":          "[60] Oh-My-Zsh already present at {dir}",
+    "omzInstallFailed":    "[60] Oh-My-Zsh installer returned non-zero",
+    "pluginInstalling":    "[60] Cloning custom plugin '{name}' -> {dest}",
+    "pluginAlready":       "[60] Plugin '{name}' already present at {dest}",
+    "pluginCloneFailed":   "[60] git clone failed for plugin '{name}' from {repo}",
+    "backedUp":            "[60] Backed up {src} -> {dst}",
+    "deployedBase":        "[60] Deployed payload/zshrc-base -> ~/.zshrc",
+    "appendedExtras":      "[60] Appended payload/zshrc-extras to ~/.zshrc ({n} new lines)",
+    "skipExtrasMarker":    "[60] zshrc-extras block already present (marker found) -- skipping append",
+    "themeMissing":        "[60] Configured theme '{theme}' not found in {dir}",
+    "verifyOk":            "[60] Verify OK (zsh present, ~/.oh-my-zsh exists, ~/.zshrc deployed)",
+    "verifyFail":          "[60] Verify FAILED ({reason})",
+    "alreadyInstalled":    "[60] Already installed",
+    "uninstallHint":       "[60] To remove cleanly, use script 62-install-zsh-clear (when available)",
+    "chshSkipped":         "[60] chsh skipped (set_default_shell=false in config.json)",
+    "chshDone":            "[60] Default shell changed to {shell}"
+  }
+}
