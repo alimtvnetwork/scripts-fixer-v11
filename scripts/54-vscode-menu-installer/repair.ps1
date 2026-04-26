@@ -33,8 +33,6 @@ $sharedDir = Join-Path (Split-Path -Parent $scriptDir) "shared"
 . (Join-Path $scriptDir "helpers\audit-log.ps1")
 . (Join-Path $scriptDir "helpers\registry-snapshot.ps1")
 . (Join-Path $scriptDir "helpers\verbosity.ps1")
-# vscode-check.ps1 hosts Invoke-PostOpVerification + Write-RegistryAuditReport.
-. (Join-Path $scriptDir "helpers\vscode-check.ps1")
 
 $configPath = Join-Path $scriptDir "config.json"
 $isConfigMissing = -not (Test-Path -LiteralPath $configPath)
