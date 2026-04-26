@@ -537,6 +537,20 @@ manifest="$RUN_DIR/manifest.json"
         "$vr" "$vb" "$vk" "$vt_esc" "$vd_esc"
     done < "$VERIFY_TSV"
   fi
+  printf ']},"contextMenu":{"totals":{"pass":%d,"fail":%d,"skipped":%d},"rows":[' \
+    "${VERIFY_CTX_PASSES:-0}" "${VERIFY_CTX_FAILS:-0}" "${VERIFY_CTX_SKIPS:-0}"
+  first=1
+  if [ -f "$VERIFY_CTX_TSV" ]; then
+    while IFS=$'\t' read -r cr cb ck ct cd; do
+      [ -z "$cr" ] && continue
+      [ "$first" -eq 1 ] || printf ','
+      first=0
+      ct_esc=$(printf '%s' "$ct" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      cd_esc=$(printf '%s' "$cd" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      printf '{"result":"%s","bucket":"%s","kind":"%s","target":"%s","detail":"%s"}' \
+        "$cr" "$cb" "$ck" "$ct_esc" "$cd_esc"
+    done < "$VERIFY_CTX_TSV"
+  fi
   printf ']}}\n'
 } > "$manifest" 2>/dev/null \
   || log_file_error "$manifest" "manifest write failed"
