@@ -1,0 +1,18 @@
+{
+  "start":              "[70] Starting Ubuntu WordPress installer",
+  "component_start":    "[70][%s] starting installation",
+  "component_done":     "[70][%s] installed OK",
+  "component_skip":     "[70][%s] already installed -- skipping",
+  "interactive_intro":  "[70] Interactive mode -- press Enter to accept the [default]",
+  "prompt_mysql_port":  "[70][mysql] port",
+  "prompt_mysql_dir":   "[70][mysql] data directory",
+  "prompt_php_version": "[70][php] version (8.1|8.2|8.3|latest)",
+  "prompt_wp_path":     "[70][wp] install directory",
+  "prompt_wp_url_port": "[70][wp] HTTP port",
+  "prompt_db_name":     "[70][wp] database name",
+  "prompt_db_user":     "[70][wp] database user",
+  "prompt_db_pass":     "[70][wp] database password (blank = auto-generate)",
+  "summary_header":     "[70] === WordPress installation summary ===",
+  "verify_ok":          "[70][verify] OK -- all components reachable",
+  "verify_fail":        "[70][verify] FAILED -- see lines above for the failing component"
+}
