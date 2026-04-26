@@ -433,12 +433,15 @@ function Write-RegistryAuditReport {
     Write-Log "" -Level "info"
     Write-Log "------------------------------------------------------------" -Level "info"
     Write-Log " REGISTRY CHANGE REPORT" -Level "info"
+    $scopeLabel = if ($Summary.PSObject.Properties.Name -contains 'scope' -and $Summary.scope) { $Summary.scope } else { 'unknown' }
+    Write-Log (" Resolved scope: " + $scopeLabel + "  (hive actually touched this run)") -Level "info"
     Write-Log "------------------------------------------------------------" -Level "info"
 
     if ($Summary.totalAdded -gt 0) {
         Write-Log ("Added ({0}):" -f $Summary.totalAdded) -Level "success"
         foreach ($a in $Summary.added) {
-            Write-Log ("  + [{0}/{1}] {2}" -f $a.edition, $a.target, $a.regPath) -Level "success"
+            $rowScope = if ($a.PSObject.Properties.Name -contains 'scope' -and $a.scope) { $a.scope } else { $scopeLabel }
+            Write-Log ("  + [{0}/{1}/{2}] {3}" -f $rowScope, $a.edition, $a.target, $a.regPath) -Level "success"
         }
     } elseif ($Action -eq 'install') {
         Write-Log "Added (0): no new keys were written this run." -Level "warn"
@@ -447,7 +450,8 @@ function Write-RegistryAuditReport {
     if ($Summary.totalRemoved -gt 0) {
         Write-Log ("Removed ({0}):" -f $Summary.totalRemoved) -Level "success"
         foreach ($r in $Summary.removed) {
-            Write-Log ("  - [{0}/{1}] {2}" -f $r.edition, $r.target, $r.regPath) -Level "success"
+            $rowScope = if ($r.PSObject.Properties.Name -contains 'scope' -and $r.scope) { $r.scope } else { $scopeLabel }
+            Write-Log ("  - [{0}/{1}/{2}] {3}" -f $rowScope, $r.edition, $r.target, $r.regPath) -Level "success"
         }
     } elseif ($Action -eq 'uninstall') {
         Write-Log "Removed (0): nothing was actually deleted this run." -Level "warn"
@@ -456,7 +460,8 @@ function Write-RegistryAuditReport {
     if ($Summary.totalSkipped -gt 0) {
         Write-Log ("Skipped / already absent ({0}):" -f $Summary.totalSkipped) -Level "info"
         foreach ($s in $Summary.skipped) {
-            Write-Log ("  ~ [{0}/{1}] {2}" -f $s.edition, $s.target, $s.regPath) -Level "info"
+            $rowScope = if ($s.PSObject.Properties.Name -contains 'scope' -and $s.scope) { $s.scope } else { $scopeLabel }
+            Write-Log ("  ~ [{0}/{1}/{2}] {3}" -f $rowScope, $s.edition, $s.target, $s.regPath) -Level "info"
         }
     }
 
@@ -464,7 +469,8 @@ function Write-RegistryAuditReport {
         Write-Log ("FAILED ({0}):" -f $Summary.totalFailed) -Level "error"
         foreach ($f in $Summary.failed) {
             $reason = if ($f.reason) { $f.reason } else { "no reason captured" }
-            Write-Log ("  ! [{0}/{1}] {2} (failure: {3})" -f $f.edition, $f.target, $f.regPath, $reason) -Level "error"
+            $rowScope = if ($f.PSObject.Properties.Name -contains 'scope' -and $f.scope) { $f.scope } else { $scopeLabel }
+            Write-Log ("  ! [{0}/{1}/{2}] {3} (failure: {4})" -f $rowScope, $f.edition, $f.target, $f.regPath, $reason) -Level "error"
         }
     }
 
