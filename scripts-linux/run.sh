@@ -88,6 +88,16 @@ while [ $# -gt 0 ]; do
         VERB="grp-passthrough"; GRP_SUB="cli";  shift; GRP_REST=("$@"); break ;;
     add-groups-from-json|groups-from-json|add-group-from-json|group-from-json)
         VERB="grp-passthrough"; GRP_SUB="json"; shift; GRP_REST=("$@"); break ;;
+    # ---- top-level shortcuts to script 68 (user creation) ----
+    # Mirrors the add-group shortcuts above. The CLI form takes the same
+    # flags as 68-user-mgmt/add-user.sh (incl. --ssh-key / --ssh-key-file
+    # which can be repeated). The JSON form auto-detects single object,
+    # array, or { "users": [...] } shapes and supports per-record
+    # sshKeys (array of inline pubkeys) + sshKeyFiles (array of paths).
+    add-user|user-add)
+        VERB="usr-passthrough"; USR_SUB="cli";  shift; USR_REST=("$@"); break ;;
+    add-users-from-json|users-from-json|add-user-from-json|user-from-json)
+        VERB="usr-passthrough"; USR_SUB="json"; shift; USR_REST=("$@"); break ;;
     *)
         # `./run.sh install wordpress [args]` lands here AFTER install was consumed.
         # Re-route it through the wp passthrough so the user-friendly form works.
