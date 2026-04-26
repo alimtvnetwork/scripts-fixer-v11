@@ -67,6 +67,15 @@ while [ $# -gt 0 ]; do
         VERB="vsclin-passthrough"; VSCLIN_SUB="list";   shift; VSCLIN_REST=("$@"); break ;;
     vscode-clean-linux-help|vscode-linux-clean-help)
         VERB="vsclin-passthrough"; VSCLIN_SUB="help";   shift; VSCLIN_REST=("$@"); break ;;
+    # ---- top-level shortcuts to script 70 (Ubuntu WordPress installer) ----
+    # `./run.sh install wordpress [args...]`  -> full stack install
+    # `./run.sh install wp [args...]`         -> alias of 'wordpress'
+    # `./run.sh install wp-only [args...]`    -> only the WordPress component
+    # `./run.sh wp [args...]` / `./run.sh wordpress [args...]` -> shortcut without 'install'
+    wp|wordpress)
+        VERB="wp-passthrough"; WP_SUB="install"; WP_COMP=""; shift; WP_REST=("$@"); break ;;
+    wp-only)
+        VERB="wp-passthrough"; WP_SUB="install"; WP_COMP="wp-only"; shift; WP_REST=("$@"); break ;;
     *) log_warn "Unknown arg: $1"; shift ;;
   esac
 done
@@ -276,6 +285,15 @@ case "${VERB:-help}" in
       bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB" "${_vsclin_filtered[@]}"
     else
       bash "$ROOT/67-vscode-cleanup-linux/run.sh" "$VSCLIN_SUB"
+    fi
+    ;;
+  wp-passthrough)
+    _wp_filtered=()
+    for _a in "${WP_REST[@]:-}"; do [ -n "$_a" ] && _wp_filtered+=("$_a"); done
+    if [ -n "$WP_COMP" ]; then
+      bash "$ROOT/70-install-wordpress-ubuntu/run.sh" "$WP_SUB" "$WP_COMP" "${_wp_filtered[@]}"
+    else
+      bash "$ROOT/70-install-wordpress-ubuntu/run.sh" "$WP_SUB" "${_wp_filtered[@]}"
     fi
     ;;
   install|check|repair|uninstall)
