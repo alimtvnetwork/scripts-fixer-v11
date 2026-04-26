@@ -56,7 +56,12 @@ param(
     [ValidateSet('Both','CurrentUser','AllUsers')]
     [string]                                $OnlyScope     = 'Both',
     [switch]                                $KeepGoing,
-    [switch]                                $NoColor
+    [switch]                                $NoColor,
+    # When supplied, a machine-readable residue report is written to this
+    # path as JSON. Existing files are overwritten. The directory must
+    # already exist; if the write fails the operator gets a CODE-RED line
+    # naming the exact path and reason. Independent of console output.
+    [string]                                $ReportPath    = ""
 )
 
 Set-StrictMode -Version Latest
@@ -116,6 +121,42 @@ function Write-C {
 $script:scopeStatus = @{
     CurrentUser = [ordered]@{ ran=$false; installFail=$false; uninstallFail=$false; bleedFail=$false; reasons=@() }
     AllUsers    = [ordered]@{ ran=$false; installFail=$false; uninstallFail=$false; bleedFail=$false; reasons=@() }
+}
+
+# Structured per-row residue ledger. Every Add-ResidueRow call appends one
+# entry shaped:
+#   Scope    : 'CurrentUser' | 'AllUsers'
+#   Edition  : config edition name
+#   Target   : 'file' | 'directory' | 'background'
+#   Class    : one of MISSING-AFTER-INSTALL | RESIDUE | BLEED-INSTALL | BLEED-UNINSTALL
+#   Hive     : 'this' (the scope under test) | 'opposite' (the watch hive)
+#   PsPath   : full PsPath (Registry::HKEY_*\...)
+#   Detail   : short human reason for the entry
+# This is the source of truth for both the on-screen residue table and
+# the optional -ReportPath JSON dump. The legacy concatenated-reasons
+# strings on $scopeStatus are kept untouched so the granular exit codes
+# stay bit-for-bit compatible.
+$script:residueRows = New-Object System.Collections.Generic.List[object]
+
+function Add-ResidueRow {
+    param(
+        [Parameter(Mandatory)] [ValidateSet('CurrentUser','AllUsers')]                                  [string] $Scope,
+        [Parameter(Mandatory)]                                                                          [string] $EditionName,
+        [Parameter(Mandatory)] [ValidateSet('file','directory','background','-')]                       [string] $Target,
+        [Parameter(Mandatory)] [ValidateSet('MISSING-AFTER-INSTALL','RESIDUE','BLEED-INSTALL','BLEED-UNINSTALL')] [string] $Class,
+        [Parameter(Mandatory)] [ValidateSet('this','opposite')]                                         [string] $Hive,
+        [Parameter(Mandatory)]                                                                          [string] $PsPath,
+        [Parameter(Mandatory)]                                                                          [string] $Detail
+    )
+    $script:residueRows.Add([pscustomobject]@{
+        Scope   = $Scope
+        Edition = $EditionName
+        Target  = $Target
+        Class   = $Class
+        Hive    = $Hive
+        PsPath  = $PsPath
+        Detail  = $Detail
+    })
 }
 
 function Add-ScopeFail {
