@@ -213,7 +213,7 @@ sys.stdout.write("\n")
   fi
 
   # awk fallback (POSIX awk + gawk both work).
-  list_startup_entries | awk -v tag="$tag" '
+  list_startup_entries | awk -F'\t' -v tag="$tag" '
     function jesc(s,    r) {
       r = s
       gsub(/\\/, "\\\\", r)
@@ -240,7 +240,7 @@ sys.stdout.write("\n")
       if (n>0) printf "\n  "
       printf "]\n}\n"
     }
-  ' BEGIN { FS="\t" }
+  '
 }
 
 cmd_remove() {
