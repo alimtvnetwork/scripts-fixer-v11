@@ -499,24 +499,31 @@ Write-ResidueReport -Rows $script:residueRows
 # CI job (or a follow-up script) can parse the same data without screen-
 # scraping. CODE-RED on any write failure: log the exact target path.
 if (-not [string]::IsNullOrWhiteSpace($ReportPath)) {
-    $reportDoc = [ordered]@{
+    # Build the document with [pscustomobject] at every nesting level.
+    # We deliberately avoid nested [ordered]@{} blocks inside an outer
+    # [ordered]@{}: PowerShell rejects that with "Argument types do not
+    # match" at runtime. [pscustomobject] preserves declaration order in
+    # ConvertTo-Json and nests cleanly.
+    $scopeStatusObj = [pscustomobject]@{
+        CurrentUser = [pscustomobject]$script:scopeStatus.CurrentUser
+        AllUsers    = [pscustomobject]$script:scopeStatus.AllUsers
+    }
+    $totalsObj = [pscustomobject]@{
+        rows                = $script:residueRows.Count
+        residue             = ($script:residueRows | Where-Object { $_.Class -eq 'RESIDUE' }).Count
+        missingAfterInstall = ($script:residueRows | Where-Object { $_.Class -eq 'MISSING-AFTER-INSTALL' }).Count
+        bleedInstall        = ($script:residueRows | Where-Object { $_.Class -eq 'BLEED-INSTALL' }).Count
+        bleedUninstall      = ($script:residueRows | Where-Object { $_.Class -eq 'BLEED-UNINSTALL' }).Count
+    }
+    $reportDoc = [pscustomobject]@{
         schema      = "scripts/54/scope-matrix-residue-report.v1"
         generatedAt = (Get-Date).ToString("o")
         admin       = $isAdmin
         editions    = @($editionsToTest)
         scopes      = @($scopesPlanned)
-        scopeStatus = [ordered]@{
-            CurrentUser = $script:scopeStatus.CurrentUser
-            AllUsers    = $script:scopeStatus.AllUsers
-        }
+        scopeStatus = $scopeStatusObj
         residueRows = @($script:residueRows)
-        totals      = [ordered]@{
-            rows                  = $script:residueRows.Count
-            residue               = ($script:residueRows | Where-Object { $_.Class -eq 'RESIDUE' }).Count
-            missingAfterInstall   = ($script:residueRows | Where-Object { $_.Class -eq 'MISSING-AFTER-INSTALL' }).Count
-            bleedInstall          = ($script:residueRows | Where-Object { $_.Class -eq 'BLEED-INSTALL' }).Count
-            bleedUninstall        = ($script:residueRows | Where-Object { $_.Class -eq 'BLEED-UNINSTALL' }).Count
-        }
+        totals      = $totalsObj
     }
     try {
         $json = $reportDoc | ConvertTo-Json -Depth 8
