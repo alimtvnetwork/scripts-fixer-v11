@@ -57,6 +57,32 @@ Mirrors the Windows-side `scripts/os/` startup block.
 ./run.sh -I 64 -- remove EDITOR --method shell-rc-env
 ```
 
+## Interactive picker
+
+Run `remove` with no name (or `--interactive`/`-i`) to get a numbered table
+of all tagged entries and pick which to delete:
+
+```bash
+./run.sh -I 64 -- remove                # auto-interactive on a TTY
+./run.sh -I 64 -- remove --interactive  # explicit, works without TTY when piped
+```
+
+Selection grammar:
+- `1`             single index
+- `1,3,5`         comma-separated
+- `2-4`           inclusive range
+- `1,3-5`         mix
+- `all` / `*`     every listed entry
+- `q` / empty     cancel
+
+Combine with `--method` to scope the picker (e.g. only autostart entries),
+and `--yes` to skip the confirmation prompt (useful in scripts that pipe
+a fixed selection):
+
+```bash
+printf '1,3\n' | ./run.sh -I 64 -- remove -i --yes --method autostart
+```
+
 ## Machine-readable output
 
 `list` defaults to a human table. Pass `--json` (or `--format=json`) for a
