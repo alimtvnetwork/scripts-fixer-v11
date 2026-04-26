@@ -195,6 +195,6 @@ switch ($Command.ToLower()) {
         exit $LASTEXITCODE
     }
     default {
-        & (Join-Path $scriptDir "install.ps1") -Edition $Edition -VsCodePath $VsCodePath -Scope $Scope
+        & (Join-Path $scriptDir "install.ps1") -Edition $Edition -VsCodePath $VsCodePath -Scope $Scope -Verbosity $Verbosity
     }
 }
