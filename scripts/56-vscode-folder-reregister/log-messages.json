@@ -28,6 +28,10 @@
       "remove":     "Delete the folder + background HKCR entries for every enabled edition (regardless of whether Code.exe is on disk).",
       "check":      "Read-only audit: prints PASS/MISS for every (edition, target) combination."
     },
+    "parameters": {
+      "-Edition": "Limit operation to a single edition (e.g. 'stable' or 'insiders'). Default: every entry in config.enabledEditions.",
+      "-Help":    "Show this help and exit."
+    },
     "examples": [
       ".\\run.ps1 -I 56 -- reregister",
       ".\\run.ps1 -I 56 -- check",
