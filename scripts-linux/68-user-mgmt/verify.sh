@@ -186,6 +186,22 @@ fi
 [ -n "$VRF_USERS_JSON"  ] && { vrf_load_json "$VRF_USERS_JSON"  "users"  || exit $?; }
 
 # ---- live probes (read-only) -----------------------------------------------
+# Override um_group_exists with a getent-free fallback so verify.sh works
+# on minimal containers (no nss-tools). um_user_exists already uses `id`
+# which is in coreutils, so it's already portable.
+um_group_exists() {
+  local name="$1"
+  if [ "$UM_OS" = "macos" ]; then
+    dscl . -read "/Groups/$name" >/dev/null 2>&1
+    return $?
+  fi
+  if command -v getent >/dev/null 2>&1; then
+    getent group "$name" >/dev/null 2>&1
+    return $?
+  fi
+  awk -F: -v n="$name" 'BEGIN{rc=1} $1==n {rc=0; exit} END{exit rc}' /etc/group 2>/dev/null
+}
+
 vrf_get_gid() {
   local n="$1"
   if [ "$UM_OS" = "macos" ]; then
