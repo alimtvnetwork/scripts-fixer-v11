@@ -159,6 +159,7 @@ append_extras_zshrc() {
     echo ""
     echo "$EXTRAS_MARKER_BEGIN"
     cat "$PAYLOAD_EXTRAS"
+    echo ""
     echo "$EXTRAS_MARKER_END"
   } >> "$ZSHRC"
   log_ok "[60] Appended payload/zshrc-extras to $ZSHRC ($n new lines)"
