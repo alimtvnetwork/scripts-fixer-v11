@@ -25,6 +25,7 @@ OneNote install (`onenote` keyword) must do ONLY OneNote. OneDrive disable lives
 - [Resolved folder](mem://features/resolved-folder) — .resolved/ runtime state persistence
 - [Shared helpers](mem://features/shared-helpers) — Shared PowerShell helper modules
 - [ZSH theme switcher](mem://features/zsh-theme-switcher) — Script 61: wires `zsh-theme` command into ~/.zshrc with interactive menu + flag mode
+- [ZSH installer](mem://features/zsh-installer) — Script 60: installs zsh + Oh-My-Zsh, deploys curated zshrc payloads between markers, auto-backs up existing config
 - [Models catalog](mem://features/models-catalog) — 90 GGUF models incl. OpenRouter leaderboard open-weight portion (Nov 2025)
 - [VS Code Project Manager sync](mem://features/vscode-projects-sync) — `run.ps1 scan <path>` upserts discovered projects into VS Code Project Manager projects.json (match by rootPath, atomic writes, never opens VS Code)
 - [Generic install spec (in design)](mem://features/generic-install-spec) — Cross-repo install behavior: strict tag mode, main fallback, v1..v20 parallel discovery. Awaiting 15-item checklist confirmation.
