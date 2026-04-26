@@ -5,14 +5,20 @@
     "groups": ["sudo", "docker"],
     "shell": "/bin/bash",
     "comment": "Alice (admin)",
-    "sudo": true
+    "sudo": true,
+    "sshKeys": [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleAliceKey1Replace alice@laptop"
+    ]
   },
   {
     "name": "bob",
     "passwordFile": "/etc/secrets/bob.pw",
     "primaryGroup": "devs",
     "groups": ["devs"],
-    "shell": "/bin/zsh"
+    "shell": "/bin/zsh",
+    "sshKeyFiles": [
+      "/etc/ssh/keys/bob.pub"
+    ]
   },
   {
     "name": "svc-build",
