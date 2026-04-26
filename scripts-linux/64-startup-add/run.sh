@@ -317,6 +317,22 @@ _method_matches() {
   return 1
 }
 
+# _read_line VARNAME -- read one line from /dev/tty when usable, else from
+# the inherited stdin, with all errors silenced. Always returns 0 and sets
+# VARNAME (possibly to "") so callers can rely on a defined variable.
+_read_line() {
+  local __out_var="$1"
+  local __line=""
+  # `exec 3</dev/tty` will fail loudly on non-TTY hosts (CI/sandboxes), so
+  # probe with a subshell first and swallow the diagnostic.
+  if (exec 3</dev/tty) >/dev/null 2>&1; then
+    IFS= read -r __line </dev/tty 2>/dev/null || __line=""
+  else
+    IFS= read -r __line 2>/dev/null || __line=""
+  fi
+  printf -v "$__out_var" '%s' "$__line"
+}
+
 # Renders a numbered table of all tagged entries (filtered by --method when
 # provided), reads a selection like "1,3-5" or "all" from /dev/tty, confirms,
 # then removes each chosen entry via remove_startup_entry.
@@ -357,13 +373,8 @@ _cmd_remove_interactive() {
   printf '  Select entries to remove: '
 
   # Read from /dev/tty so this works even when run.sh's stdin was redirected.
-  local input
-  if [ -r /dev/tty ]; then
-    IFS= read -r input < /dev/tty || input=""
-  else
-    IFS= read -r input || input=""
-  fi
-  input="${input:-}"
+  local input=""
+  _read_line input
 
   case "$input" in
     ""|q|Q|quit|exit) log_info "[64] cancelled (no selection)"; return 0 ;;
@@ -423,9 +434,8 @@ _cmd_remove_interactive() {
   done
   if [ "$yes" -ne 1 ]; then
     printf '  Confirm? [y/N] '
-    local ans
-    if [ -r /dev/tty ]; then IFS= read -r ans < /dev/tty || ans=""
-    else IFS= read -r ans || ans=""; fi
+    local ans=""
+    _read_line ans
     case "${ans:-}" in
       y|Y|yes|YES) ;;
       *) log_info "[64] cancelled at confirm"; return 0 ;;
