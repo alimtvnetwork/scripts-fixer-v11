@@ -94,8 +94,20 @@ RC_DRY=$?
 [ "$RC_DRY" -eq 0 ]; _assert "dry-run exit code = 0" $?
 
 echo "--- apply ---"
-bash "$SCRIPT_ROOT/run.sh" --scope user --no-color > "$SANDBOX/apply.out" 2>&1
+bash "$SCRIPT_ROOT/run.sh" --scope user --no-color --yes > "$SANDBOX/apply.out" 2>&1
 RC_APPLY=$?
+# Confirm the plan was rendered before deletion.
+grep -q "Planned VS Code cleanup actions" "$SANDBOX/apply.out"; _assert "apply rendered plan tree before deleting" $?
+grep -q "Confirmation skipped: --yes"     "$SANDBOX/apply.out"; _assert "apply honored --yes" $?
+
+echo "--- apply, no-yes, no-tty (must abort) ---"
+# Re-stage a single user-config dir so the abort run has something to plan.
+mkdir -p "$FAKE_HOME/.config/Code"
+bash "$SCRIPT_ROOT/run.sh" --scope user --no-color --only user-config </dev/null > "$SANDBOX/abort.out" 2>&1
+RC_ABORT=$?
+[ "$RC_ABORT" -eq 2 ];                                       _assert "no-tty + no --yes -> exit 2" $?
+[ -d "$FAKE_HOME/.config/Code"                              ]; _assert "abort kept ~/.config/Code on disk" $?
+grep -q "Aborting to avoid an unattended destructive run"  "$SANDBOX/abort.out"; _assert "abort logged the safe-default reason" $?
 
 # Apply: only matching artifacts gone, decoys preserved.
 [ ! -d "$FAKE_HOME/.local/share/code"           ]; _assert "apply removed tarball dir"                $?
