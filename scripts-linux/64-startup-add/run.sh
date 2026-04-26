@@ -37,7 +37,7 @@ Usage: ./run.sh -I 64 -- <subverb> [args]
 Subverbs:
   app  <path>     [--method M] [--name N] [--args "..."] [--interactive]
   env  KEY=VALUE  [--scope user] [--method shell-rc|systemd-env|launchctl]
-  list            [--method M] [--json|--format=table|json]
+  list            [--method M] [--json|--csv|--format=table|json|csv] [--output FILE]
   remove <name>   [--method ...]
 
 Linux methods : autostart | systemd-user | shell-rc
@@ -143,46 +143,174 @@ cmd_list() {
   fi
   local fmt="table"
   local method=""
+  local out_file=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --json)            fmt="json"; shift ;;
+      --csv)             fmt="csv"; shift ;;
       --format)          fmt="${2:-table}"; shift 2 ;;
       --format=*)        fmt="${1#--format=}"; shift ;;
       --method)          method="${2:-}"; shift 2 ;;
       --method=*)        method="${1#--method=}"; shift ;;
+      -o|--output)       out_file="${2:-}"; shift 2 ;;
+      --output=*)        out_file="${1#--output=}"; shift ;;
       -h|--help)         usage; return 0 ;;
       *) log_warn "[64] list: ignoring extra arg: $1"; shift ;;
     esac
   done
 
+  # When writing to a file, ensure the parent dir exists and the file is
+  # creatable BEFORE we generate output, so failures are loud and early.
+  if [ -n "$out_file" ]; then
+    local out_dir
+    out_dir=$(dirname -- "$out_file")
+    if ! mkdir -p -- "$out_dir" 2>/dev/null; then
+      log_file_error "$out_file" "cannot create parent directory: $out_dir"
+      return 1
+    fi
+    if ! : >"$out_file" 2>/dev/null; then
+      log_file_error "$out_file" "cannot write to output file"
+      return 1
+    fi
+  fi
+
   case "$fmt" in
     table)
-      local count=0
-      printf 'METHOD          NAME                 PATH/ID\n'
-      printf -- '--------------- -------------------- --------------------------------------------\n'
-      while IFS=$'\t' read -r m n p _scope; do
-        [ -z "${m:-}" ] && continue
-        _method_matches "$method" "$m" || continue
-        printf '%-15s %-20s %s\n' "$m" "$n" "$p"
-        count=$((count+1))
-      done < <(list_startup_entries)
-      printf -- '--------------- -------------------- --------------------------------------------\n'
-      printf '%d entr%s tagged "%s".\n' "$count" "$([ $count -eq 1 ] && echo y || echo ies)" "${STARTUP_TAG_PREFIX:-lovable-startup}"
-      return 0
+      _emit_list_table "$method" "$out_file"
+      return $?
       ;;
     json)
+      if [ -n "$out_file" ]; then
+        _emit_list_json "$method" >"$out_file" || return $?
+        log_info "[64] wrote JSON to: $out_file"
+        return 0
+      fi
       _emit_list_json "$method"
       return $?
       ;;
+    csv)
+      if [ -n "$out_file" ]; then
+        _emit_list_csv "$method" >"$out_file" || return $?
+        log_info "[64] wrote CSV to: $out_file"
+        return 0
+      fi
+      _emit_list_csv "$method"
+      return $?
+      ;;
     *)
-      log_warn "[64] list: unknown --format '$fmt' (use table|json)"
+      log_warn "[64] list: unknown --format '$fmt' (use table|json|csv)"
       return 1
       ;;
   esac
 }
 
+# _row_status PATH METHOD -- echo "active" if the underlying path/file exists,
+# else "orphaned". `path` for shell-rc-app/shell-rc-env is the rc file we wrote
+# the block into; for autostart/systemd-user/launchagent it is the unit file.
+_row_status() {
+  local path="$1"
+  if [ -n "$path" ] && [ -e "$path" ]; then
+    echo "active"
+  else
+    echo "orphaned"
+  fi
+}
+
+# Render the human table (optionally to a file). Adds a STATUS column so the
+# operator can see at a glance which entries point at a missing target.
+_emit_list_table() {
+  local method="$1" out_file="$2"
+  local tag="${STARTUP_TAG_PREFIX:-lovable-startup}"
+  local count=0
+  {
+    printf 'METHOD          NAME                 STATUS    PATH/ID\n'
+    printf -- '--------------- -------------------- --------- --------------------------------------------\n'
+    while IFS=$'\t' read -r m n p _scope; do
+      [ -z "${m:-}" ] && continue
+      _method_matches "$method" "$m" || continue
+      local st
+      st=$(_row_status "$p" "$m")
+      printf '%-15s %-20s %-9s %s\n' "$m" "$n" "$st" "$p"
+      count=$((count+1))
+    done < <(list_startup_entries)
+    printf -- '--------------- -------------------- --------- --------------------------------------------\n'
+    printf '%d entr%s tagged "%s".\n' "$count" "$([ $count -eq 1 ] && echo y || echo ies)" "$tag"
+  } | { if [ -n "$out_file" ]; then tee "$out_file" >/dev/null; else cat; fi; }
+  if [ -n "$out_file" ]; then
+    log_info "[64] wrote table to: $out_file"
+  fi
+  return 0
+}
+
+# Emit RFC 4180 CSV on stdout: header + one row per entry. Fields with commas,
+# quotes, or newlines are double-quoted with internal quotes doubled.
+_emit_list_csv() {
+  local method="${1:-}"
+  if command -v python3 >/dev/null 2>&1; then
+    list_startup_entries | python3 -c '
+import csv, os, sys
+want = sys.argv[1] if len(sys.argv) > 1 else ""
+def keep(method):
+    if not want or want == "ALL":
+        return True
+    if want == method:
+        return True
+    if want == "shell-rc" and method in ("shell-rc-app", "shell-rc-env"):
+        return True
+    return False
+w = csv.writer(sys.stdout, lineterminator="\n")
+w.writerow(["method", "name", "path", "status", "scope"])
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line:
+        continue
+    parts = line.split("\t")
+    while len(parts) < 4:
+        parts.append("")
+    method, name, path, scope = parts[0], parts[1], parts[2], parts[3] or "user"
+    if not keep(method):
+        continue
+    status = "active" if path and os.path.exists(path) else "orphaned"
+    w.writerow([method, name, path, status, scope])
+' "$method"
+    return $?
+  fi
+
+  # awk fallback. We compute status by stat-ing each path via `test -e` from
+  # inside the pipeline; awk has no portable way to test file existence.
+  list_startup_entries | awk -F'\t' -v want="$method" '
+    function csv_esc(s,    r) {
+      r = s
+      if (r ~ /[",\n\r]/) {
+        gsub(/"/, "\"\"", r)
+        r = "\"" r "\""
+      }
+      return r
+    }
+    function keep(meth) {
+      if (want == "" || want == "ALL") return 1
+      if (want == meth) return 1
+      if (want == "shell-rc" && (meth == "shell-rc-app" || meth == "shell-rc-env")) return 1
+      return 0
+    }
+    function status_of(path,    rc) {
+      if (path == "") return "orphaned"
+      # Use shell test -e via system(); avoids spawning stat.
+      rc = system("test -e \"" path "\"")
+      return (rc == 0) ? "active" : "orphaned"
+    }
+    BEGIN { print "method,name,path,status,scope" }
+    NF==0 { next }
+    {
+      if (!keep($1)) next
+      sc = ($4 == "" ? "user" : $4)
+      printf "%s,%s,%s,%s,%s\n", csv_esc($1), csv_esc($2), csv_esc($3), status_of($3), csv_esc(sc)
+    }
+  '
+}
+
 # Emit a stable JSON array on stdout. Each element:
-#   { "method": "...", "name": "...", "path": "...", "scope": "user" }
+#   { "method": "...", "name": "...", "path": "...", "status": "active|orphaned", "scope": "user" }
 # Strings are escaped per RFC 8259 (\, ", control chars). Empty list -> [].
 _emit_list_json() {
   local method="${1:-}"
@@ -195,7 +323,7 @@ _emit_list_json() {
   # distro + macOS we target), so this stays simple in production.
   if command -v python3 >/dev/null 2>&1; then
     list_startup_entries | python3 -c '
-import json, sys
+import json, os, sys
 want = sys.argv[1] if len(sys.argv) > 1 else ""
 def keep(method):
     if not want or want == "ALL":
@@ -215,10 +343,13 @@ for line in sys.stdin:
         parts.append("")
     if not keep(parts[0]):
         continue
+    path = parts[2]
+    status = "active" if path and os.path.exists(path) else "orphaned"
     rows.append({
         "method": parts[0],
         "name":   parts[1],
         "path":   parts[2],
+        "status": status,
         "scope":  parts[3] or "user",
     })
 out = {"tag": '"\"$tag\""', "count": len(rows), "entries": rows}
@@ -247,18 +378,23 @@ sys.stdout.write("\n")
       if (want == "shell-rc" && (meth == "shell-rc-app" || meth == "shell-rc-env")) return 1
       return 0
     }
+    function status_of(path,    rc) {
+      if (path == "") return "orphaned"
+      rc = system("test -e \"" path "\"")
+      return (rc == 0) ? "active" : "orphaned"
+    }
     BEGIN { n=0 }
     NF==0 { next }
     {
       if (!keep($1)) next
       n++
-      m[n]=$1; nm[n]=$2; p[n]=$3; sc[n]=($4==""?"user":$4)
+      m[n]=$1; nm[n]=$2; p[n]=$3; sc[n]=($4==""?"user":$4); st[n]=status_of($3)
     }
     END {
       printf "{\n  \"tag\": \"%s\",\n  \"count\": %d,\n  \"entries\": [", jesc(tag), n
       for (i=1; i<=n; i++) {
-        printf "%s\n    {\n      \"method\": \"%s\",\n      \"name\": \"%s\",\n      \"path\": \"%s\",\n      \"scope\": \"%s\"\n    }", \
-          (i==1?"":","), jesc(m[i]), jesc(nm[i]), jesc(p[i]), jesc(sc[i])
+        printf "%s\n    {\n      \"method\": \"%s\",\n      \"name\": \"%s\",\n      \"path\": \"%s\",\n      \"status\": \"%s\",\n      \"scope\": \"%s\"\n    }", \
+          (i==1?"":","), jesc(m[i]), jesc(nm[i]), jesc(p[i]), jesc(st[i]), jesc(sc[i])
       }
       if (n>0) printf "\n  "
       printf "]\n}\n"
