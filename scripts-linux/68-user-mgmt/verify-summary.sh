@@ -406,6 +406,177 @@ if [ "${#VS_FILES[@]}" -eq 0 ]; then
   exit 0
 fi
 
+# ---- --since cutoff resolution + mtime filter ----------------------------
+# Resolve VS_SINCE_RAW into VS_SINCE_EPOCH (seconds since epoch). Then drop
+# every entry of VS_FILES whose mtime is <= cutoff. Comparison uses
+# filesystem mtime (per user spec). Skipped files are tallied for reporting.
+VS_SINCE_EPOCH=""
+VS_SINCE_DISPLAY=""
+VS_SINCE_SOURCE=""
+VS_SINCE_SKIPPED=0
+
+_vs_is_runid() {
+  # Match the run-id format used by add-user.sh: YYYYMMDD-HHMMSS-<suffix>.
+  case "$1" in
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-*)
+      return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+_vs_parse_iso_to_epoch() {
+  # Echos epoch seconds on stdout, returns 0 on success, 1 on failure.
+  local in="$1"
+  local ep=""
+  ep=$(date -u -d "$in" +%s 2>/dev/null) || ep=""
+  if [ -z "$ep" ]; then
+    # BSD date fallback (macOS): try a couple of common formats.
+    ep=$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$in" +%s 2>/dev/null) || ep=""
+  fi
+  if [ -z "$ep" ]; then
+    ep=$(date -u -j -f "%Y-%m-%dT%H:%M:%S%z" "$in" +%s 2>/dev/null) || ep=""
+  fi
+  if [ -z "$ep" ]; then return 1; fi
+  printf '%s' "$ep"
+  return 0
+}
+
+_vs_file_mtime() {
+  # Echos mtime epoch for $1. Linux first, BSD fallback. Empty on failure.
+  stat -c %Y -- "$1" 2>/dev/null || stat -f %m -- "$1" 2>/dev/null || true
+}
+
+if [ -n "$VS_SINCE_RAW" ]; then
+  if _vs_is_runid "$VS_SINCE_RAW"; then
+    # --- run-id resolution: writtenAt across discovered set, then manifest mtime
+    _vs_run_cutoff=""
+    _vs_run_src=""
+
+    # (a) Look for any *already-discovered* summary whose runId matches.
+    #     We pick the MAX writtenAt so the cutoff sits at the most recent
+    #     evidence of that run completing.
+    if command -v jq >/dev/null 2>&1; then
+      _vs_max_iso=""
+      for _cand in "${VS_FILES[@]}"; do
+        case "$(basename -- "$_cand")" in
+          "${VS_SINCE_RAW}__"*) : ;;
+          *) continue ;;
+        esac
+        [ -r "$_cand" ] || continue
+        _w=$(jq -r '.writtenAt // empty' "$_cand" 2>/dev/null)
+        [ -z "$_w" ] && continue
+        # Only keep if it parses to epoch.
+        _wep=$(_vs_parse_iso_to_epoch "$_w") || continue
+        if [ -z "$_vs_max_iso" ] || [ "$_wep" -gt "$_vs_max_iso" ]; then
+          _vs_max_iso="$_wep"
+          _vs_run_cutoff="$_wep"
+          _vs_run_display="$_w"
+        fi
+      done
+      if [ -n "$_vs_run_cutoff" ]; then
+        _vs_run_src="summary.writtenAt"
+      fi
+    fi
+
+    # (b) Fallback: manifest mtime under UM_MANIFEST_DIR.
+    if [ -z "$_vs_run_cutoff" ]; then
+      _vs_mdir="${UM_MANIFEST_DIR:-/var/lib/68-user-mgmt/ssh-key-runs}"
+      shopt -s nullglob
+      _vs_mhits=("$_vs_mdir/${VS_SINCE_RAW}__"*.json)
+      shopt -u nullglob
+      if [ "${#_vs_mhits[@]}" -gt 0 ]; then
+        _vs_max_m=""
+        for _mf in "${_vs_mhits[@]}"; do
+          _mt=$(_vs_file_mtime "$_mf")
+          [ -z "$_mt" ] && continue
+          if [ -z "$_vs_max_m" ] || [ "$_mt" -gt "$_vs_max_m" ]; then
+            _vs_max_m="$_mt"
+          fi
+        done
+        if [ -n "$_vs_max_m" ]; then
+          _vs_run_cutoff="$_vs_max_m"
+          _vs_run_display=$(date -u -d "@$_vs_max_m" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                            || date -u -r "$_vs_max_m" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                            || echo "@$_vs_max_m")
+          _vs_run_src="manifest.mtime"
+        fi
+      fi
+    fi
+
+    if [ -z "$_vs_run_cutoff" ]; then
+      log_err "$(um_msg summarySinceRunUnresolved \
+                  "$VS_SINCE_RAW" \
+                  "${VS_ROOT:-${UM_MANIFEST_DIR:-/var/lib/68-user-mgmt/ssh-key-runs}}" \
+                  "${UM_MANIFEST_DIR:-/var/lib/68-user-mgmt/ssh-key-runs}" \
+                  "$VS_SINCE_RAW")"
+      exit 2
+    fi
+
+    VS_SINCE_EPOCH="$_vs_run_cutoff"
+    VS_SINCE_DISPLAY="$_vs_run_display"
+    VS_SINCE_SOURCE="run-id:$_vs_run_src"
+
+    if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ] && [ "$_vs_results_to_stdout" != "1" ]; then
+      log_info "$(um_msg summarySinceRunResolved "$VS_SINCE_RAW" "$VS_SINCE_DISPLAY" "$VS_SINCE_EPOCH" "$_vs_run_src")"
+    fi
+  else
+    # --- timestamp resolution
+    _vs_ep=""
+    if _vs_ep=$(_vs_parse_iso_to_epoch "$VS_SINCE_RAW"); then
+      VS_SINCE_EPOCH="$_vs_ep"
+      VS_SINCE_DISPLAY=$(date -u -d "@$_vs_ep" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                          || date -u -r "$_vs_ep" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                          || echo "$VS_SINCE_RAW")
+      VS_SINCE_SOURCE="timestamp"
+    else
+      log_err "$(um_msg summarySinceBadInput "$VS_SINCE_RAW" "value did not match run-id pattern YYYYMMDD-HHMMSS-* and 'date -d' rejected it")"
+      exit 64
+    fi
+  fi
+
+  if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ] && [ "$_vs_results_to_stdout" != "1" ]; then
+    log_info "$(um_msg summarySinceCutoff "$VS_SINCE_DISPLAY" "$VS_SINCE_EPOCH" "$VS_SINCE_SOURCE")"
+  fi
+
+  # Apply the mtime > cutoff filter.
+  _vs_kept=()
+  _vs_pre_total="${#VS_FILES[@]}"
+  for _f in "${VS_FILES[@]}"; do
+    if [ ! -e "$_f" ]; then
+      # Keep non-existent paths so vs_validate_one can produce the proper
+      # CODE-RED "file does not exist" failure for the operator.
+      _vs_kept+=("$_f")
+      continue
+    fi
+    _mt=$(_vs_file_mtime "$_f")
+    if [ -z "$_mt" ]; then
+      # Couldn't stat -- keep and let validator surface the exact failure.
+      _vs_kept+=("$_f")
+      continue
+    fi
+    if [ "$_mt" -gt "$VS_SINCE_EPOCH" ]; then
+      _vs_kept+=("$_f")
+    else
+      VS_SINCE_SKIPPED=$((VS_SINCE_SKIPPED+1))
+    fi
+  done
+  VS_FILES=("${_vs_kept[@]:-}")
+
+  if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ] && [ "$_vs_results_to_stdout" != "1" ]; then
+    log_info "$(um_msg summarySinceFiltered "${#VS_FILES[@]}" "$VS_SINCE_SKIPPED" "$VS_SINCE_DISPLAY")"
+  fi
+
+  if [ "${#VS_FILES[@]}" -eq 0 ]; then
+    if [ "$VS_JSON" = "1" ]; then
+      printf '{"summary":{"checked":0,"passed":0,"failed":0,"warned":0},"since":{"raw":"%s","epoch":%s,"display":"%s","source":"%s","skipped":%s},"ok":true,"empty":true}\n' \
+        "$VS_SINCE_RAW" "$VS_SINCE_EPOCH" "$VS_SINCE_DISPLAY" "$VS_SINCE_SOURCE" "$VS_SINCE_SKIPPED"
+    else
+      log_warn "$(um_msg summarySinceEmpty "$_vs_pre_total" "$VS_SINCE_DISPLAY")"
+    fi
+    exit 0
+  fi
+fi
+
 # ---- per-file validator ----------------------------------------------------
 # Required counter keys for both summary{} and aggregate{}.
 VS_REQ_COUNTERS=(sources_requested keys_parsed keys_unique keys_installed_new keys_preserved)
