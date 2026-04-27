@@ -727,12 +727,14 @@ if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
 
             # Persist rollback manifest. Only the keys that were actually
             # appended this run get tracked -- pre-existing keys are
-            # untouched on rollback. We pass the FULL dedup buffer as a
-            # safety net, then filter inside the manifest writer if we
-            # ever need to (current impl tracks them all, since the
-            # operator can still spot pre-existing keys via fingerprint
-            # in the manifest list output).
-            _um_write_manifest "$UM_NAME" "$_ssh_file" "$_ssh_buf" "$added"
+            # excluded so rollback can never delete keys we didn't put
+            # there. Net-new = (merged set) MINUS (existing set), order
+            # preserved.
+            _new_only=$(awk '
+                NR==FNR { if (NF) seen[$0]=1; next }
+                NF && !seen[$0] { print }
+            ' <(printf '%s\n' "$existing") <(printf '%s\n' "$_ssh_buf"))
+            _um_write_manifest "$UM_NAME" "$_ssh_file" "$_new_only" "$added"
           fi
         fi
       fi
