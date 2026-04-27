@@ -129,3 +129,56 @@ Backup naming differs to keep the two scrubs distinct on disk:
 | `code-url-handler.desktop` with no MimeType/Actions | NO change, NO backup written | ✅ |
 | `firefox.desktop` with MimeType + Actions + `[Desktop Action ...]` | byte-for-byte unchanged (sha256 verified) | ✅ |
 | Non-existent dirs (snap, flatpak, wine, /usr/share missing) | skipped silently | ✅ |
+
+## v0.167.0 — `_clean_context_menu_entries`
+
+Adds a third helper invoked from `verb_uninstall` after the MIME-defaults
+and .desktop-entry scrubs. Removes "Open with Code" context-menu
+integrations across all major Linux file managers + the integration
+shims VS Code's install tree ships.
+
+### Three independent allow-list pairs
+
+1. **Shell-script integrations** (`fileNames[]` x `searchDirs[]`)
+   Nautilus / Nemo / Caja / Thunar drop executable scripts into per-user
+   directories. We delete files whose basename matches `fileNames[]` AND
+   whose parent dir is in `searchDirs[]`. Names covered: "Open with
+   Code", "Open with Code.sh", "Open in Code", "Open with VSCode",
+   "Open with VS Code", "Open with Code - Insiders", "open-with-code",
+   "open-with-code.sh", "code-context.sh", "vscode-open-here.sh".
+
+2. **File-manager actions** (`actionFileNames[]` x `actionDirs[]`)
+   Modern Files (>=43), Nemo, and Caja support XML/.desktop action
+   files in `~/.local/share/{file-manager,nemo,caja}/actions/` and
+   `/usr/share/.../actions/`. We delete only allow-listed basenames
+   (`open-with-code.desktop`, `open-with-code.nemo_action`, etc.).
+
+3. **VS Code install-tree shims** (`integrationFiles[]` x `integrationRoots[]`)
+   VS Code's install tree (`/usr/share/code/resources/app/bin`,
+   snap/flatpak counterparts, `~/.vscode/bin`) sometimes ships
+   `code-context.sh`, `code-shell-integration.sh`, `open-with-code.sh`.
+   These are removed in-place; the install dir itself is untouched.
+
+### Safety invariants
+- File deletion only -- directories are NEVER removed (`refuse to
+  delete directory` warning if a path resolves to one).
+- Each delete writes a `.bak-01ctx-<timestamp>` snapshot first; on
+  snapshot failure we abort the delete (CODE RED file-error logged).
+- Symlinks are removed without snapshot (cp -p preserves the link
+  itself, so a snapshot-then-unlink is safe but uninformative; we just
+  log "is a symlink -- removing without backup").
+- Sudo prefix auto-selected: `$HOME/...` paths use no sudo, every other
+  path uses sudo.
+
+### Verified test cases (v0.167.0)
+| Fixture | Expected | Verified |
+|---|---|---|
+| `~/.local/share/nautilus/scripts/Open with Code` (allow-listed) | removed + `.bak-01ctx-*` written | ✅ |
+| `~/.local/share/nautilus/scripts/Open with Sublime` (sibling) | sha256 unchanged | ✅ |
+| `~/.local/share/nemo/scripts/open-with-code.sh` (allow-listed) | removed + backup | ✅ |
+| `~/.local/share/nemo/scripts/compress-to-zip.sh` (sibling) | sha256 unchanged | ✅ |
+| `~/.local/share/file-manager/actions/open-with-code.desktop` (allow-listed) | removed + backup | ✅ |
+| `~/.local/share/file-manager/actions/compress.desktop` (sibling) | sha256 unchanged | ✅ |
+| `~/.vscode/bin/code-context.sh` (allow-listed) | removed + backup | ✅ |
+| `~/.vscode/bin/some-user-helper.sh` (sibling) | sha256 unchanged | ✅ |
+| Missing dirs (Caja, Thunar uca.xml.d, snap install root) | skipped silently | ✅ |
