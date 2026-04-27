@@ -127,6 +127,36 @@ _fp_of_line() {
     printf '%s' "$fp"
 }
 
+# ---- --prune mode ----------------------------------------------------------
+# Resolves policy from CLI overrides on top of config.json defaults, then
+# delegates to um_manifest_prune (helpers/_manifest_prune.sh). Needs root
+# to actually delete manifests (dir is 0700 root); dry-run runs unprivileged.
+if [ "$UM_PRUNE" = "1" ]; then
+  cfg="$SCRIPT_DIR/config.json"
+  cfg_older=90
+  cfg_keep=20
+  cfg_max=500
+  if [ -r "$cfg" ]; then
+    cfg_older=$(jq -r '.manifestRetention.olderThanDays   // 90'  "$cfg" 2>/dev/null) || cfg_older=90
+    cfg_keep=$( jq -r '.manifestRetention.keepLastPerUser // 20'  "$cfg" 2>/dev/null) || cfg_keep=20
+    cfg_max=$(  jq -r '.manifestRetention.maxTotal        // 500' "$cfg" 2>/dev/null) || cfg_max=500
+  else
+    log_warn "config.json not readable at '$cfg' (failure: using built-in defaults olderThanDays=90 keepLastPerUser=20 maxTotal=500)"
+  fi
+
+  export UM_PRUNE_DIR="$UM_MANIFEST_DIR"
+  export UM_PRUNE_OLDER_THAN_DAYS="${UM_PRUNE_OLDER_THAN_DAYS_CLI:-$cfg_older}"
+  export UM_PRUNE_KEEP_LAST="${UM_PRUNE_KEEP_LAST_CLI:-$cfg_keep}"
+  export UM_PRUNE_MAX_TOTAL="${UM_PRUNE_MAX_TOTAL_CLI:-$cfg_max}"
+  export UM_PRUNE_DRY_RUN="$UM_DRY_RUN"
+  export UM_PRUNE_QUIET=0
+
+  if [ "$UM_DRY_RUN" != "1" ]; then um_require_root || exit $?; fi
+  if [ "$UM_DRY_RUN" = "1" ]; then log_warn "$(um_msg dryRunBanner)"; fi
+  um_manifest_prune
+  exit $?
+fi
+
 # ---- --list mode -----------------------------------------------------------
 if [ "$UM_LIST" = "1" ]; then
   if [ ! -d "$UM_MANIFEST_DIR" ]; then
