@@ -150,9 +150,36 @@ _install_one() {
         mysql)     component_mysql_install     ;;
         php)       component_php_install       ;;
         nginx)     component_nginx_install     ;;
+        apache)    component_apache_install    ;;
+        http)      _install_http               ;;
+        firewall)  component_firewall_install  ;;
+        http-verify) component_http_verify     ;;
         wordpress|wp|wp-only) component_wordpress_install ;;
         prereqs|prerequisites) _install_prerequisites ;;
         *)         log_err "[70] Unknown component: '$1'"; return 2 ;;
+    esac
+}
+
+# ---- HTTP server (nginx | apache) ------------------------------------------
+# Dispatches to the requested HTTP server. Validates WP_HTTP_SERVER first so a
+# typo doesn't silently fall through to nginx.
+_install_http() {
+    case "${WP_HTTP_SERVER:-nginx}" in
+        nginx)
+            log_info "[70][http] HTTP server = nginx"
+            component_nginx_install ;;
+        apache|apache2|httpd)
+            log_info "[70][http] HTTP server = apache2"
+            # Pre-emptively stop nginx if installed -- :80 conflict otherwise.
+            if command -v nginx >/dev/null 2>&1 && sudo systemctl is-active --quiet nginx; then
+                log_info "[70][http] stopping nginx to free port for apache"
+                sudo systemctl stop nginx 2>/dev/null || true
+                sudo systemctl disable nginx 2>/dev/null || true
+            fi
+            component_apache_install ;;
+        *)
+            log_err "[70][http] unknown WP_HTTP_SERVER='${WP_HTTP_SERVER}' (expected: nginx|apache)"
+            return 2 ;;
     esac
 }
 
@@ -193,8 +220,16 @@ _install_all() {
     log_info "[70] Starting Ubuntu WordPress installer (engine=$WP_DB_ENGINE php=$WP_PHP_VERSION path=$WP_INSTALL_PATH)"
     local rc=0
     _install_prerequisites      || rc=$?
-    [ $rc -eq 0 ] && component_nginx_install     || rc=$?
+    [ $rc -eq 0 ] && _install_http               || rc=$?
     [ $rc -eq 0 ] && component_wordpress_install || rc=$?
+    [ $rc -eq 0 ] && component_firewall_install  || rc=$?
+    if [ $rc -eq 0 ]; then
+        # HTTP-loads check is best-effort: don't fail the whole install if
+        # the wizard page isn't reachable yet (DNS, container networking).
+        if ! component_http_verify; then
+            log_warn "[70] HTTP verification failed -- WordPress files are in place but the site did not respond as expected. Investigate before opening the install wizard."
+        fi
+    fi
     return $rc
 }
 
