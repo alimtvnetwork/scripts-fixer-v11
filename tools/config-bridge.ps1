@@ -87,7 +87,7 @@ function Send-Json {
     $Response.StatusCode = $Status
     $Response.ContentType = "application/json; charset=utf-8"
     $Response.Headers.Add("Access-Control-Allow-Origin",  $AllowOrigin)
-    $Response.Headers.Add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    $Response.Headers.Add("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS")
     $Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, X-Bridge-Token")
     $Response.ContentLength64 = $bytes.Length
     $Response.OutputStream.Write($bytes, 0, $bytes.Length)
