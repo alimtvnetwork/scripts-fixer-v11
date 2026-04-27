@@ -570,7 +570,7 @@ _um_write_manifest() {
         printf '  "host": "%s",\n' "$(hostname 2>/dev/null || echo unknown)"
         printf '  "user": "%s",\n' "$user"
         printf '  "authorizedKeysFile": "%s",\n' "$auth_path"
-        printf '  "scriptVersion": "0.172.0",\n'
+        printf '  "scriptVersion": "0.173.0",\n'
         printf '  "keys": [\n'
 
         local first=1
