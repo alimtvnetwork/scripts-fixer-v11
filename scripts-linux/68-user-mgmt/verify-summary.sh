@@ -90,6 +90,29 @@
 #                           exclusive with --json -- pick one wire format.
 #   --strict                promote consistency warnings to errors
 #   --quiet                 suppress per-file pretty output, keep tally
+#
+#   --rule NAME             enable an opt-in cross-field rule (repeatable).
+#                           Use 'all' to enable every opt-in rule. Unknown
+#                           names exit rc=64 with the allowed list.
+#   --no-rule NAME          disable a specific rule (useful after --rule all).
+#   --list-rules            print the rule catalog (name, default, severity,
+#                           description) and exit 0. No validation runs.
+#
+#   Opt-in rule catalog:
+#     pure-inline-eq-sources           (default: off, severity: error)
+#         When sources.inline > 0 AND sources.file == 0 AND sources.url == 0,
+#         require keys_parsed == keys_unique == sources_requested. Catches
+#         de-dup or parse drift on pure-inline runs where every source is
+#         exactly one key.
+#     installed-plus-preserved-eq-unique (default: off, severity: error)
+#         Promote the existing soft warning to an error: when ok==true,
+#         keys_installed_new + keys_preserved must equal keys_unique.
+#     unique-le-parsed                 (default: off, severity: error)
+#         Promote: keys_unique <= keys_parsed (de-dup can only shrink).
+#     installed-le-parsed              (default: off, severity: error)
+#         Promote: keys_installed_new <= keys_parsed.
+#     batch-aggregate-matches-users    (default: ON, severity: error, builtin)
+#         Listed for completeness; always enforced for batch docs.
 #   -h | --help             this help
 #
 # Exit codes:
@@ -121,6 +144,10 @@ Examples:
   bash verify-summary.sh --auto --since 20260427-101530-abcd     # only newer than that run
   bash verify-summary.sh --discover --since '2026-04-27T00:00:00Z'
   bash verify-summary.sh --auto --since 'yesterday' --json
+  bash verify-summary.sh --list-rules
+  bash verify-summary.sh --auto --rule all
+  bash verify-summary.sh --auto --rule pure-inline-eq-sources --rule unique-le-parsed
+  bash verify-summary.sh --auto --rule all --no-rule installed-le-parsed
 EOF
 }
 
@@ -140,6 +167,41 @@ VS_AUTO=0
 VS_RESULTS_JSON=0         # 1 if --results-json was passed
 VS_RESULTS_JSON_PATH=""   # "" or "-" means stdout; else file target
 VS_SINCE_RAW=""           # raw --since input (run-id or timestamp); "" = disabled
+
+# ---- per-rule cross-field checks ------------------------------------------
+# Each opt-in rule defaults to OFF. Enabled rules are tracked as flags on the
+# associative-style VS_RULES map (bash 4 assoc array). We never silently
+# accept an unknown rule -- it MUST appear in the catalog or rc=64.
+VS_RULE_CATALOG=(
+  "pure-inline-eq-sources"
+  "installed-plus-preserved-eq-unique"
+  "unique-le-parsed"
+  "installed-le-parsed"
+)
+# Built-in (always on, listed for --list-rules visibility).
+VS_RULE_BUILTIN=(
+  "batch-aggregate-matches-users"
+)
+declare -A VS_RULES_ENABLED=()
+VS_LIST_RULES=0
+
+vs_is_known_rule() {
+  # $1 = rule name. Returns 0 if in opt-in catalog or built-in.
+  local n="$1" r
+  for r in "${VS_RULE_CATALOG[@]}" "${VS_RULE_BUILTIN[@]}"; do
+    [ "$r" = "$n" ] && return 0
+  done
+  return 1
+}
+
+vs_rules_csv() {
+  # Emit allowed names + 'all' for error messages.
+  local r out=""
+  for r in "${VS_RULE_CATALOG[@]}"; do out+="$r, "; done
+  for r in "${VS_RULE_BUILTIN[@]}"; do out+="$r, "; done
+  out+="all"
+  printf '%s' "$out"
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -179,11 +241,77 @@ while [ $# -gt 0 ]; do
       ;;
     --strict)    VS_STRICT=1; shift ;;
     --quiet)     VS_QUIET=1;  shift ;;
+    --list-rules) VS_LIST_RULES=1; shift ;;
+    --rule)
+      _rn="${2:-}"
+      if [ -z "$_rn" ]; then
+        log_err "--rule requires a value (failure: pass a name from: $(vs_rules_csv))"
+        exit 64
+      fi
+      if [ "$_rn" = "all" ]; then
+        for _rc in "${VS_RULE_CATALOG[@]}"; do VS_RULES_ENABLED[$_rc]=1; done
+      elif vs_is_known_rule "$_rn"; then
+        VS_RULES_ENABLED[$_rn]=1
+      else
+        log_err "--rule got unknown name '$_rn' (failure: allowed: $(vs_rules_csv))"
+        exit 64
+      fi
+      shift 2
+      ;;
+    --rule=*)
+      _rn="${1#--rule=}"
+      if [ "$_rn" = "all" ]; then
+        for _rc in "${VS_RULE_CATALOG[@]}"; do VS_RULES_ENABLED[$_rc]=1; done
+      elif vs_is_known_rule "$_rn"; then
+        VS_RULES_ENABLED[$_rn]=1
+      else
+        log_err "--rule got unknown name '$_rn' (failure: allowed: $(vs_rules_csv))"
+        exit 64
+      fi
+      shift
+      ;;
+    --no-rule)
+      _rn="${2:-}"
+      if [ -z "$_rn" ]; then
+        log_err "--no-rule requires a value (failure: pass a name from: $(vs_rules_csv))"
+        exit 64
+      fi
+      if ! vs_is_known_rule "$_rn"; then
+        log_err "--no-rule got unknown name '$_rn' (failure: allowed: $(vs_rules_csv))"
+        exit 64
+      fi
+      unset 'VS_RULES_ENABLED[$_rn]'
+      shift 2
+      ;;
+    --no-rule=*)
+      _rn="${1#--no-rule=}"
+      if ! vs_is_known_rule "$_rn"; then
+        log_err "--no-rule got unknown name '$_rn' (failure: allowed: $(vs_rules_csv))"
+        exit 64
+      fi
+      unset 'VS_RULES_ENABLED[$_rn]'
+      shift
+      ;;
     --) shift; break ;;
     -*) log_err "unknown option: '$1' (failure: see --help)"; exit 64 ;;
     *)  log_err "unexpected positional: '$1' (failure: verify-summary.sh has no positionals -- use --file/--dir)"; exit 64 ;;
   esac
 done
+
+# --list-rules short-circuits all input handling; it prints the catalog and
+# exits 0 so the operator can `verify-summary.sh --list-rules` from any host.
+if [ "$VS_LIST_RULES" = "1" ]; then
+  printf '%s\n' "verify-summary cross-field rule catalog"
+  printf '%s\n' "  (opt-in via --rule NAME, disable via --no-rule NAME, --rule all enables every opt-in)"
+  printf '\n'
+  printf '  %-38s %-9s %s\n' "NAME" "DEFAULT" "DESCRIPTION"
+  printf '  %-38s %-9s %s\n' "pure-inline-eq-sources" "off" "On pure-inline runs (file=0,url=0,inline>0): keys_parsed==keys_unique==sources_requested"
+  printf '  %-38s %-9s %s\n' "installed-plus-preserved-eq-unique" "off" "When ok=true: keys_installed_new + keys_preserved == keys_unique"
+  printf '  %-38s %-9s %s\n' "unique-le-parsed" "off" "keys_unique <= keys_parsed (dedup can only shrink)"
+  printf '  %-38s %-9s %s\n' "installed-le-parsed" "off" "keys_installed_new <= keys_parsed"
+  printf '  %-38s %-9s %s\n' "batch-aggregate-matches-users" "ON (builtin)" "Batch aggregate counters == sum across users[].summary"
+  exit 0
+fi
 
 # Mutual exclusion: --json and --results-json speak different formats.
 if [ "$VS_JSON" = "1" ] && [ "$VS_RESULTS_JSON" = "1" ]; then
