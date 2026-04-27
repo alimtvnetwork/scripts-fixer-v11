@@ -45,12 +45,13 @@ printf "\n"
 # Prefer ripgrep, fall back to grep -r
 if command -v rg >/dev/null 2>&1; then
     # rg with --no-ignore so we audit EVERY tracked + untracked file.
-    # We still skip obvious noise dirs and the scanner itself.
-    OUTPUT="$(cd "$ROOT" && rg --no-ignore --hidden \
+    # Explicit "." path argument is required in some environments where
+    # implicit-CWD search returns nothing.
+    OUTPUT="$(cd "$ROOT" && rg --no-ignore --hidden --no-config \
         --glob '!.git' --glob '!node_modules' --glob '!dist' --glob '!build' \
         --glob '!.lovable/compliance-reports/**' \
         --glob '!tools/scan-legacy-fixer-refs.*' \
-        -nH "$PATTERN" 2>/dev/null || true)"
+        -nH "$PATTERN" . 2>/dev/null || true)"
 else
     OUTPUT="$(cd "$ROOT" && grep -RnHE \
         --binary-files=without-match \
