@@ -186,6 +186,81 @@ um_next_macos_gid() {
   printf '%s' "$candidate"
 }
 
+# ---- numeric primary GID resolver (cross-OS, v0.174.0) ----------------------
+# Returns the numeric primary GID for an existing user. We need the NUMERIC
+# value (not the group name) for chown on macOS, where directory-services
+# group names occasionally drift from /etc/group entries and chown by name
+# can fail with "invalid group" even though the user exists.
+#
+# Resolution order:
+#   1. `id -g <user>`           -- works on Linux + macOS for any real user
+#   2. macOS dscl PrimaryGroupID -- fallback when getpwnam is racy after
+#                                   a fresh dscl -create
+# Echoes the numeric gid on stdout, or empty string on failure.
+um_resolve_pg_gid() {
+  local user="$1"
+  local gid=""
+  gid=$(id -g "$user" 2>/dev/null)
+  if [ -z "$gid" ] && [ "${UM_OS:-}" = "macos" ]; then
+    gid=$(dscl . -read "/Users/$user" PrimaryGroupID 2>/dev/null \
+          | awk '/^PrimaryGroupID:/ {print $2}')
+  fi
+  printf '%s' "$gid"
+}
+
+# ---- macOS home seeder (v0.174.0) -------------------------------------------
+# After `dscl . -create /Users/<n> NFSHomeDirectory ...` the home dir
+# does NOT exist on disk. Apple's documented one-liner is:
+#     createhomedir -c -u <name>
+# which materialises the dir, copies the User Template (~/Library skeleton),
+# and sets owner=<user>:<gid> mode=0755 the way the Setup Assistant would.
+#
+# This function does that, with a graceful fallback for stripped-down hosts
+# (CI runners, restored Time Machine images) where createhomedir was pruned:
+# we mkdir + chown numerically + chmod 0755, log a warning so the operator
+# knows the ~/Library skeleton is missing, and keep going.
+#
+# Args: <user> <home-dir> <numeric-gid>
+# Returns 0 on success (incl. fallback path), 1 only on hard write failure.
+um_seed_macos_home() {
+  local user="$1" home="$2" gid="$3"
+  if [ "${UM_DRY_RUN:-0}" = "1" ]; then
+    log_info "[dry-run] createhomedir -c -u '$user'  (would seed '$home' owner $user:$gid mode 0755)"
+    return 0
+  fi
+
+  if command -v createhomedir >/dev/null 2>&1; then
+    # createhomedir prints to stderr on failure; capture it for CODE RED.
+    local out rc=0
+    out=$(createhomedir -c -u "$user" 2>&1) || rc=$?
+    if [ "$rc" -ne 0 ] || [ ! -d "$home" ]; then
+      log_err "$(um_msg macHomeSeedFail "$home" "$user" "createhomedir rc=$rc: $(printf '%s' "$out" | tr '\n' ' ' | head -c 200)" "$user")"
+      return 1
+    fi
+    # createhomedir already chowns/chmods correctly, but re-assert to be
+    # defensive against a pre-existing $home with wrong perms.
+    chown "$user:$gid" "$home" 2>/dev/null || true
+    chmod 0755 "$home" 2>/dev/null         || true
+    log_ok "$(um_msg macHomeSeeded "$home" "$user" "$user" "$gid")"
+    return 0
+  fi
+
+  # Fallback: bare dir + manual perms. ~/Library skeleton is missing so
+  # GUI apps may complain, but ssh + shell login will work.
+  if ! mkdir -p "$home" 2>/dev/null; then
+    log_file_error "$home" "could not create macOS home dir (createhomedir absent)"
+    return 1
+  fi
+  chmod 0755 "$home" 2>/dev/null \
+    || log_file_error "$home" "could not chmod 0755 on macOS home"
+  if ! chown "$user:$gid" "$home" 2>/dev/null; then
+    log_file_error "$home" "could not chown to $user:$gid (macOS fallback)"
+    return 1
+  fi
+  log_warn "$(um_msg macHomeSeededFallback "$home" "$user" "$user" "$gid")"
+  return 0
+}
+
 # ---- dry-run shim -----------------------------------------------------------
 # Wrap any state-mutating command. When UM_DRY_RUN=1 we just log the intent.
 um_run() {

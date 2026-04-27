@@ -236,11 +236,16 @@ else
     um_run dscl . -create "/Users/$UM_NAME" UniqueID       "$UM_UID"            || true
     um_run dscl . -create "/Users/$UM_NAME" PrimaryGroupID "$pg_gid"            || true
     um_run dscl . -create "/Users/$UM_NAME" NFSHomeDirectory "$UM_HOME"         || true
-    if [ "$UM_DRY_RUN" != "1" ] && [ ! -d "$UM_HOME" ]; then
-      um_run mkdir -p "$UM_HOME" \
-        || log_file_error "$UM_HOME" "could not create home dir"
-      um_run chown "$UM_NAME:$pg_gid" "$UM_HOME" 2>/dev/null || true
-    fi
+    # Materialise the home dir via Apple's createhomedir (preferred:
+    # populates ~/Library skeleton, applies ACLs, owner+mode 0755). Falls
+    # back to mkdir+chown when createhomedir is absent (CI runners). We
+    # always pass the NUMERIC gid so chown can't drift on dscl-vs-getpwnam
+    # name resolution. Best effort -- a failure here is logged with the
+    # exact path + reason but does not abort the rest of user creation
+    # (the operator can still chpasswd / add to groups even without a
+    # ready home dir; SSH key install will detect the missing home and
+    # warn separately).
+    um_seed_macos_home "$UM_NAME" "$UM_HOME" "$pg_gid" || true
     log_ok "$(um_msg userCreated "$UM_NAME" "$UM_UID" "$UM_PRIMARY_GROUP")"
     um_summary_add "ok" "user" "$UM_NAME" "uid=$UM_UID"
   fi
@@ -712,6 +717,20 @@ if [ "$UM_SSH_SOURCES_REQUESTED" -gt 0 ]; then
       if [ ! -d "$UM_HOME" ]; then
         log_warn "$(um_msg sshHomeMissing "$UM_HOME" "$UM_NAME")"
       else
+        # Resolve the target's NUMERIC primary GID once, up-front. We use
+        # numbers (not names) for chown so a macOS dscl-vs-getpwnam name
+        # drift can't break the install. _pg_gid is allowed to be empty
+        # (e.g. on a host where `id -g` lags after dscl create); we fall
+        # back to the group NAME we already have in $UM_PRIMARY_GROUP and
+        # log a warning so the operator can audit.
+        _pg_gid=$(um_resolve_pg_gid "$UM_NAME")
+        if [ -z "$_pg_gid" ]; then
+          log_warn "$(um_msg macPgGidMissing "$UM_NAME" "$UM_PRIMARY_GROUP")"
+          _chown_target="$UM_NAME:$UM_PRIMARY_GROUP"
+        else
+          _chown_target="$UM_NAME:$_pg_gid"
+        fi
+
         # mkdir -p is idempotent; we always re-assert mode + owner so a
         # half-baked previous run can't leave 0755 perms behind.
         if ! mkdir -p "$_ssh_dir" 2>/dev/null; then
@@ -719,6 +738,11 @@ if [ "$UM_SSH_SOURCES_REQUESTED" -gt 0 ]; then
         else
           chmod 0700 "$_ssh_dir" 2>/dev/null \
             || log_file_error "$_ssh_dir" "could not chmod 0700"
+          # Chown the .ssh DIR itself before we write the file so an
+          # interrupted run can't leave a root-owned dir blocking the
+          # user's later sshd access.
+          chown "$_chown_target" "$_ssh_dir" 2>/dev/null \
+            || log_warn "$(um_msg sshOwnerWarn "$_ssh_dir" "$_chown_target")"
 
           # Merge: append only NEW keys (not already present in the file).
           existing=""
@@ -729,8 +753,14 @@ if [ "$UM_SSH_SOURCES_REQUESTED" -gt 0 ]; then
           else
             chmod 0600 "$_ssh_file" 2>/dev/null \
               || log_file_error "$_ssh_file" "could not chmod 0600"
-            chown "$UM_NAME:$UM_PRIMARY_GROUP" "$_ssh_dir" "$_ssh_file" 2>/dev/null \
-              || log_warn "$(um_msg sshOwnerWarn "$_ssh_file" "$UM_NAME:$UM_PRIMARY_GROUP")"
+            if chown "$_chown_target" "$_ssh_file" 2>/dev/null; then
+              # Numeric-gid chown succeeded: log it explicitly so the
+              # operator (esp. on macOS) sees that the safe path was
+              # used. On Linux this looks identical to the old behaviour.
+              log_info "$(um_msg sshChownNumeric "$_ssh_file" "$UM_NAME" "${_pg_gid:-$UM_PRIMARY_GROUP}")"
+            else
+              log_warn "$(um_msg sshOwnerWarn "$_ssh_file" "$_chown_target")"
+            fi
 
             # Count net-new lines added this run. before_n = preserved
             # pre-existing keys; (after_n - before_n) = net-new appended.
