@@ -288,3 +288,68 @@ function Invoke-PurgeHome {
         return $false
     }
 }
+
+# =============================================================================
+# Set-SshFileAcl -- harden ACL on a .ssh\ dir or authorized_keys file so it
+# matches OpenSSH for Windows StrictModes requirements:
+#   * Inheritance disabled (no parent ACEs leak in).
+#   * Only SYSTEM, Administrators, and the target user have access.
+#   * Owner = target user (so the user can rotate keys without admin).
+#
+# CODE RED: every failure path logs the exact file path + the icacls.exe
+# exit code AND its captured stdout/stderr so the operator can see the
+# precise reason without re-running by hand.
+# =============================================================================
+function Set-SshFileAcl {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$User,
+        [switch]$DryRun
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        Write-Log "Set-SshFileAcl: empty path (failure: refusing to harden nothing)" -Level "fail"
+        return $false
+    }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Log "Set-SshFileAcl: target does not exist. Path: $Path. Reason: cannot harden ACL on missing file/dir. Tool: icacls.exe" -Level "fail"
+        return $false
+    }
+    if ($DryRun) {
+        Write-Log "[dry-run] icacls '$Path' /inheritance:r /grant:r SYSTEM:F Administrators:F ${User}:F /setowner $User" -Level "info"
+        return $true
+    }
+
+    # 1. Disable inheritance and remove inherited ACEs in one shot.
+    $out = & icacls.exe "$Path" /inheritance:r 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "Failed to disable ACL inheritance. Path: $Path. Reason: icacls exit=$LASTEXITCODE. Output: $($out -join ' '). Tool: icacls.exe /inheritance:r" -Level "fail"
+        return $false
+    }
+
+    # 2. Grant only SYSTEM, Administrators, and the target user. /grant:r REPLACES.
+    foreach ($principal in @("SYSTEM", "Administrators", $User)) {
+        $out = & icacls.exe "$Path" /grant:r "${principal}:(F)" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "Failed to grant ACL to '$principal'. Path: $Path. Reason: icacls exit=$LASTEXITCODE. Output: $($out -join ' '). Tool: icacls.exe /grant:r" -Level "fail"
+            return $false
+        }
+    }
+
+    # 3. Strip every other principal (Authenticated Users, Everyone, Users, etc.)
+    #    Best-effort -- /remove is a no-op if the principal is absent, so we don't
+    #    fail the whole operation if any single removal returns non-zero.
+    foreach ($strip in @("Authenticated Users", "Everyone", "Users")) {
+        $null = & icacls.exe "$Path" /remove:g "$strip" 2>&1
+    }
+
+    # 4. Set owner to the target user so they can rotate keys without admin.
+    $out = & icacls.exe "$Path" /setowner "$User" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        # Non-fatal: owner may already be correct, or user is the current shell user.
+        Write-Log "Could not set owner to '$User' (continuing). Path: $Path. Reason: icacls exit=$LASTEXITCODE. Output: $($out -join ' '). Tool: icacls.exe /setowner" -Level "warn"
+    }
+
+    Write-Log "Hardened ACL on '$Path' (owner=$User; access=SYSTEM,Administrators,$User; no inheritance)." -Level "success"
+    return $true
+}
