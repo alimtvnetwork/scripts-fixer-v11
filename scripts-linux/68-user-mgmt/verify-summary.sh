@@ -41,6 +41,23 @@
 #   --auto                  shorthand for --dir <UM_MANIFEST_DIR>/summaries
 #                           (default UM_MANIFEST_DIR=/var/lib/68-user-mgmt/
 #                           ssh-key-runs)
+#   --root DIR              base directory for --glob discovery (default:
+#                           UM_MANIFEST_DIR or /var/lib/68-user-mgmt/
+#                           ssh-key-runs). Patterns are evaluated relative
+#                           to this dir.
+#   --glob PATTERN          glob pattern to discover summary JSONs under
+#                           --root (repeatable). When omitted, the patterns
+#                           from config.json -> summaryDiscovery.defaultPatterns
+#                           are used. Use shell-glob syntax; '**' requires
+#                           --recursive (bash globstar).
+#   --recursive             enable bash globstar so '**' matches across
+#                           subdirectories. Default from config.json
+#                           (summaryDiscovery.recursiveDefault, true).
+#   --no-recursive          disable globstar even if config defaults to on.
+#   --follow-symlinks       resolve symlinks in matched paths (default off).
+#   --no-follow-symlinks    explicitly keep symlink-as-given.
+#   --discover              run glob discovery using default patterns under
+#                           the resolved root. Combinable with --file/--dir.
 #   --run-id ID             when combined with --dir/--auto, only validate
 #                           files whose name starts with "<ID>__"
 #   --json                  emit one JSON document per validated file to
