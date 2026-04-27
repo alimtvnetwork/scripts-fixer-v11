@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # a "schemaUnknownField" warning (typo guard) but does NOT reject the
 # record on its own -- the user can still opt in to strict-mode rejection
 # via UM_STRICT_UNKNOWN=1.
-UM_ALLOWED_FIELDS="name password passwordFile uid shell home comment primaryGroup groups sudo system sshKeys sshKeyFiles"
+UM_ALLOWED_FIELDS="name password passwordFile uid shell home comment primaryGroup groups sudo system sshKeys sshKeyFiles sshKeyUrls sshKeyUrlTimeout sshKeyUrlMaxBytes sshKeyUrlAllowlist allowInsecureSshKeyUrl"
 
 # Validate one record's schema. Emits TSV error rows on stdout:
 #   ERROR<TAB>field<TAB>reason
@@ -132,6 +132,13 @@ _validate_user_record() {
         expect_str_array("groups"),
         expect_str_array("sshKeys"),
         expect_str_array("sshKeyFiles"),
+        expect_str_array("sshKeyUrls"),
+
+        # URL-fetcher knobs.
+        expect_uid("sshKeyUrlTimeout"),
+        expect_uid("sshKeyUrlMaxBytes"),
+        expect_nonempty_string("sshKeyUrlAllowlist"),
+        expect("allowInsecureSshKeyUrl"; "boolean"),
 
         # Unknown-field warnings (typo guard).
         ( ($allowed | split(" ")) as $known
