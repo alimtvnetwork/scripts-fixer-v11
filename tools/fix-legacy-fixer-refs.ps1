@@ -43,7 +43,7 @@ if (-not (Test-Path -LiteralPath $RepoRoot)) {
 }
 
 $skipDirs = @('.git', 'node_modules', 'dist', 'build', '.next', '.turbo',
-              '.cache', 'coverage', '.lovable')
+              '.cache', 'coverage', '.lovable', '.legacy-fix-backups')
 $skipExts = @('.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf',
               '.zip', '.gz', '.tgz', '.7z', '.rar', '.exe', '.dll',
               '.bin', '.lockb', '.woff', '.woff2', '.ttf', '.otf',
@@ -51,6 +51,8 @@ $skipExts = @('.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf',
 $selfNames = @('fix-legacy-fixer-refs.ps1', 'fix-legacy-fixer-refs.sh',
                'scan-legacy-fixer-refs.ps1', 'scan-legacy-fixer-refs.sh',
                'fix-and-verify-legacy-refs.ps1', 'fix-and-verify-legacy-refs.sh')
+# Documentation files we never rewrite (they intentionally describe the migration).
+$skipRelDocs = @('tools\readme.md', 'tools/readme.md')
 
 $patterns = $Versions | ForEach-Object { "scripts-fixer-v$_" }
 
