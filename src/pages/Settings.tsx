@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -9,6 +9,15 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import baseConfig from "../../scripts/52-vscode-folder-repair/config.json";
+import {
+  type ConfigPreset,
+  createPreset,
+  deletePreset,
+  getPreset,
+  listPresets,
+  updatePreset,
+} from "@/lib/presets";
+import type { Script52Options } from "@/lib/configSchema";
 
 type Edition = "stable" | "insiders";
 type BridgeStatus = "unknown" | "checking" | "online" | "offline";
@@ -33,9 +42,15 @@ const Settings = () => {
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("unknown");
   const [isSaving, setIsSaving] = useState(false);
 
-  const merged = useMemo(
+  // -- Server-side preset persistence ----------------------------------------
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [presets, setPresets] = useState<ConfigPreset[]>([]);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+  const [presetLabel, setPresetLabel] = useState("My settings");
+  const [isPresetBusy, setIsPresetBusy] = useState(false);
+
+  const currentOptions: Script52Options = useMemo(
     () => ({
-      ...(baseConfig as Record<string, unknown>),
       enabledEditions: [edition],
       requireAdmin: adminOnly,
       nonInteractive,
@@ -43,6 +58,160 @@ const Settings = () => {
     }),
     [edition, adminOnly, nonInteractive, requireSignature],
   );
+
+  const merged = useMemo(
+    () => ({
+      ...(baseConfig as Record<string, unknown>),
+      ...currentOptions,
+    }),
+    [currentOptions],
+  );
+
+  // Apply a loaded preset to the form controls.
+  const applyOptions = useCallback((opts: Script52Options) => {
+    setEdition(opts.enabledEditions[0] ?? "stable");
+    setAdminOnly(opts.requireAdmin);
+    setNonInteractive(opts.nonInteractive);
+    setRequireSignature(opts.requireSignature);
+  }, []);
+
+  // Load list on mount + reload after writes
+  const refreshPresets = useCallback(async () => {
+    try {
+      const rows = await listPresets(SCRIPT_ID);
+      setPresets(rows);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      toast({
+        title: "Could not load saved presets",
+        description: reason.includes("path:") ? reason : `path: config_presets — reason: ${reason}`,
+        variant: "destructive",
+      });
+    }
+  }, []);
+  useEffect(() => { void refreshPresets(); }, [refreshPresets]);
+
+  // Deep link: ?id=<uuid> auto-loads on mount and applies the preset
+  useEffect(() => {
+    const id = searchParams.get("id");
+    if (!id || id === activePresetId) return;
+    (async () => {
+      try {
+        const p = await getPreset(id);
+        if (!p) {
+          toast({
+            title: "Preset not found",
+            description: `path: config_presets/${id} — reason: row does not exist`,
+            variant: "destructive",
+          });
+          return;
+        }
+        applyOptions(p.options);
+        setPresetLabel(p.label);
+        setActivePresetId(p.id);
+        toast({ title: "Preset loaded", description: `${p.label} (${p.id.slice(0, 8)}…)` });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        toast({ title: "Load failed", description: reason, variant: "destructive" });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const handleLoadPreset = async (p: ConfigPreset) => {
+    applyOptions(p.options);
+    setPresetLabel(p.label);
+    setActivePresetId(p.id);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("id", p.id);
+      return next;
+    });
+    toast({ title: "Preset applied", description: p.label });
+  };
+
+  const handleSavePreset = async () => {
+    setIsPresetBusy(true);
+    try {
+      const saved = await createPreset({
+        scriptId: SCRIPT_ID,
+        label: presetLabel,
+        options: currentOptions,
+      });
+      setActivePresetId(saved.id);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("id", saved.id);
+        return next;
+      });
+      await refreshPresets();
+      toast({
+        title: "Preset saved",
+        description: `${saved.label} — id ${saved.id.slice(0, 8)}…`,
+      });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      toast({ title: "Save failed", description: reason, variant: "destructive" });
+    } finally {
+      setIsPresetBusy(false);
+    }
+  };
+
+  const handleUpdatePreset = async () => {
+    if (!activePresetId) return;
+    setIsPresetBusy(true);
+    try {
+      const updated = await updatePreset({
+        id: activePresetId,
+        label: presetLabel,
+        options: currentOptions,
+      });
+      await refreshPresets();
+      toast({ title: "Preset updated", description: updated.label });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      toast({ title: "Update failed", description: reason, variant: "destructive" });
+    } finally {
+      setIsPresetBusy(false);
+    }
+  };
+
+  const handleDeletePreset = async (id: string) => {
+    setIsPresetBusy(true);
+    try {
+      await deletePreset(id);
+      if (id === activePresetId) {
+        setActivePresetId(null);
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("id");
+          return next;
+        });
+      }
+      await refreshPresets();
+      toast({ title: "Preset deleted" });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      toast({ title: "Delete failed", description: reason, variant: "destructive" });
+    } finally {
+      setIsPresetBusy(false);
+    }
+  };
+
+  const handleCopyPresetLink = async (id: string) => {
+    const url = `${window.location.origin}/settings?id=${id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({ title: "Link copied", description: url });
+    } catch (err) {
+      toast({
+        title: "Copy failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    }
+  };
+
 
   // Persist bridge URL/token between visits
   useEffect(() => { localStorage.setItem(BRIDGE_KEY, bridgeUrl); }, [bridgeUrl]);
@@ -277,6 +446,107 @@ const Settings = () => {
               {bridgeStatus === "offline" &&
                 " — start the bridge with .\\tools\\config-bridge.ps1 from the repo root."}
             </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Saved presets</CardTitle>
+            <CardDescription>
+              Stored in the cloud. Each preset gets a unique ID and a shareable
+              link (<code className="rounded bg-muted px-1 py-0.5 text-xs">/settings?id=…</code>)
+              that reloads the same selections.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+              <div className="space-y-1">
+                <Label htmlFor="preset-label" className="text-xs">Label</Label>
+                <Input
+                  id="preset-label"
+                  value={presetLabel}
+                  onChange={(e) => setPresetLabel(e.target.value)}
+                  placeholder="My settings"
+                  maxLength={120}
+                />
+              </div>
+              <Button
+                className="self-end"
+                onClick={handleSavePreset}
+                disabled={isPresetBusy || presetLabel.trim().length === 0}
+              >
+                {isPresetBusy ? "Saving…" : "Save as new"}
+              </Button>
+              <Button
+                className="self-end"
+                variant="secondary"
+                onClick={handleUpdatePreset}
+                disabled={isPresetBusy || !activePresetId || presetLabel.trim().length === 0}
+                title={activePresetId ? "Overwrite the loaded preset" : "Load a preset first"}
+              >
+                Update current
+              </Button>
+            </div>
+
+            {activePresetId && (
+              <p className="text-xs text-muted-foreground">
+                Active preset id:{" "}
+                <code className="rounded bg-muted px-1 py-0.5">{activePresetId}</code>
+              </p>
+            )}
+
+            {presets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No saved presets yet. Save your current selections to create one.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border rounded-md border border-border">
+                {presets.map((p) => {
+                  const isActive = p.id === activePresetId;
+                  return (
+                    <li
+                      key={p.id}
+                      className={`flex flex-wrap items-center justify-between gap-3 px-3 py-2 ${
+                        isActive ? "bg-accent/40" : ""
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{p.label}</div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {p.id.slice(0, 8)}… · {new Date(p.updatedAt).toLocaleString()} ·{" "}
+                          edition: {p.options.enabledEditions.join(", ")}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleLoadPreset(p)}
+                          disabled={isPresetBusy}
+                        >
+                          {isActive ? "Reload" : "Load"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleCopyPresetLink(p.id)}
+                        >
+                          Copy link
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDeletePreset(p.id)}
+                          disabled={isPresetBusy}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </CardContent>
         </Card>
 
