@@ -618,7 +618,7 @@ _um_write_manifest() {
     return 0
 }
 
-if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
+if [ "$UM_SSH_SOURCES_REQUESTED" -gt 0 ]; then
 
   # Build a single newline-separated buffer of every requested key.
   # Inline keys come first (in CLI order), then file-sourced keys.
@@ -675,18 +675,22 @@ if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
     done <<< "$body"
   done
 
+  # Count parsed keys BEFORE dedup so the summary distinguishes
+  # "same key listed twice" from "you only gave me one source".
+  UM_SSH_KEYS_PARSED=$(printf '%s\n' "$_ssh_buf" | awk 'NF' | wc -l | tr -d ' ')
+
   # De-duplicate while preserving order. Awk on the buffer.
   _ssh_buf=$(printf '%s\n' "$_ssh_buf" | awk 'NF && !seen[$0]++')
-  _ssh_count=$(printf '%s\n' "$_ssh_buf" | awk 'NF' | wc -l | tr -d ' ')
+  UM_SSH_KEYS_UNIQUE=$(printf '%s\n' "$_ssh_buf" | awk 'NF' | wc -l | tr -d ' ')
 
-  if [ "$_ssh_count" -eq 0 ]; then
-    log_warn "$(um_msg sshKeyNoneValid "$UM_SSH_REQUESTED_COUNT")"
+  if [ "$UM_SSH_KEYS_UNIQUE" -eq 0 ]; then
+    log_warn "$(um_msg sshKeyNoneValid "$UM_SSH_SOURCES_REQUESTED")"
   else
     _ssh_dir="$UM_HOME/.ssh"
     _ssh_file="$_ssh_dir/authorized_keys"
 
     if [ "$UM_DRY_RUN" = "1" ]; then
-      log_info "[dry-run] would install $_ssh_count ssh key(s) to $_ssh_file (mode 0600, dir 0700, owner $UM_NAME)"
+      log_info "[dry-run] would install $UM_SSH_KEYS_UNIQUE unique ssh key(s) to $_ssh_file (mode 0600, dir 0700, owner $UM_NAME)"
       # Print fingerprints (never key bodies) so the operator can audit.
       while IFS= read -r line; do
         [ -z "$line" ] && continue
@@ -699,7 +703,11 @@ if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
         fi
         log_info "[dry-run]   key fingerprint: $fp"
       done <<< "$_ssh_buf"
-      UM_SSH_INSTALLED_COUNT="$_ssh_count"
+      # Dry-run: assume EVERY unique key would be net-new (we can't read
+      # the real authorized_keys without committing to the install). The
+      # operator will see the actual installed_new count on a real run.
+      UM_SSH_KEYS_INSTALLED_NEW="$UM_SSH_KEYS_UNIQUE"
+      UM_SSH_KEYS_PRESERVED=0
     else
       if [ ! -d "$UM_HOME" ]; then
         log_warn "$(um_msg sshHomeMissing "$UM_HOME" "$UM_NAME")"
@@ -724,12 +732,18 @@ if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
             chown "$UM_NAME:$UM_PRIMARY_GROUP" "$_ssh_dir" "$_ssh_file" 2>/dev/null \
               || log_warn "$(um_msg sshOwnerWarn "$_ssh_file" "$UM_NAME:$UM_PRIMARY_GROUP")"
 
-            # Count net-new lines added this run.
+            # Count net-new lines added this run. before_n = preserved
+            # pre-existing keys; (after_n - before_n) = net-new appended.
             before_n=$(printf '%s\n' "$existing" | awk 'NF' | wc -l | tr -d ' ')
             after_n=$(printf '%s\n' "$merged"   | awk 'NF' | wc -l | tr -d ' ')
-            added=$(( after_n - before_n ))
-            UM_SSH_INSTALLED_COUNT="$_ssh_count"
-            log_ok "$(um_msg sshKeyInstalled "$_ssh_file" "$added" "$_ssh_count")"
+            UM_SSH_KEYS_PRESERVED="$before_n"
+            UM_SSH_KEYS_INSTALLED_NEW=$(( after_n - before_n ))
+            log_ok "$(um_msg sshKeyInstalled "$_ssh_file" \
+                "$UM_SSH_SOURCES_REQUESTED" \
+                "$UM_SSH_KEYS_PARSED" \
+                "$UM_SSH_KEYS_UNIQUE" \
+                "$UM_SSH_KEYS_INSTALLED_NEW" \
+                "$UM_SSH_KEYS_PRESERVED")"
 
             # Audit fingerprints (NEVER full key bodies).
             while IFS= read -r line; do
@@ -753,12 +767,13 @@ if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
                 NR==FNR { if (NF) seen[$0]=1; next }
                 NF && !seen[$0] { print }
             ' <(printf '%s\n' "$existing") <(printf '%s\n' "$_ssh_buf"))
-            _um_write_manifest "$UM_NAME" "$_ssh_file" "$_new_only" "$added"
+            _um_write_manifest "$UM_NAME" "$_ssh_file" "$_new_only" "$UM_SSH_KEYS_INSTALLED_NEW"
           fi
         fi
       fi
     fi
-    um_summary_add "ok" "ssh-key" "$UM_NAME" "$_ssh_count requested -> $UM_SSH_INSTALLED_COUNT installed"
+    um_summary_add "ok" "ssh-key" "$UM_NAME" \
+      "sources=$UM_SSH_SOURCES_REQUESTED parsed=$UM_SSH_KEYS_PARSED unique=$UM_SSH_KEYS_UNIQUE new=$UM_SSH_KEYS_INSTALLED_NEW preserved=$UM_SSH_KEYS_PRESERVED"
   fi
 fi
 
@@ -773,8 +788,13 @@ if [ -n "$UM_GROUP_LIST" ]; then printf '  Extra groups : %s\n' "$UM_GROUP_LIST"
 if [ -n "$UM_RESOLVED_PASSWORD" ]; then
   printf '  Password     : %s  (passed via CLI/JSON -- never logged)\n' "$UM_MASKED_PW"
 fi
-if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
-  printf '  SSH keys     : requested=%d installed=%d (file: %s/.ssh/authorized_keys)\n' \
-    "$UM_SSH_REQUESTED_COUNT" "$UM_SSH_INSTALLED_COUNT" "$UM_HOME"
+if [ "$UM_SSH_SOURCES_REQUESTED" -gt 0 ]; then
+  # Pipeline-style summary so the operator can read left-to-right what
+  # happened to each --ssh-key / --ssh-key-file / --ssh-key-url they
+  # passed. "preserved" counts pre-existing keys we did NOT touch.
+  printf '  SSH keys     : sources=%d parsed=%d unique=%d installed_new=%d preserved=%d\n' \
+    "$UM_SSH_SOURCES_REQUESTED" "$UM_SSH_KEYS_PARSED" "$UM_SSH_KEYS_UNIQUE" \
+    "$UM_SSH_KEYS_INSTALLED_NEW" "$UM_SSH_KEYS_PRESERVED"
+  printf '                 (file: %s/.ssh/authorized_keys)\n' "$UM_HOME"
 fi
 printf '\n'
