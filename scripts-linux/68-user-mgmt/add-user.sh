@@ -681,6 +681,191 @@ _um_write_manifest() {
     return 0
 }
 
+# --- ssh-key install summary writer (added v0.182.0) ----------------------
+#
+# Emits a structured JSON document with the SSH-key install counters
+# plus context. Schema is stable and versioned (`summaryVersion: 1`):
+#
+#   {
+#     "summaryVersion": 1,
+#     "writtenAt":  "<UTC ISO-8601>",
+#     "host":       "<hostname>",
+#     "user":       "<unix user>",
+#     "runId":      "<rollback run-id>",
+#     "scriptVersion": "<add-user.sh version>",
+#     "authorizedKeysFile": "<path>",
+#     "summary": {
+#       "sources_requested":  <n>,
+#       "keys_parsed":        <n>,
+#       "keys_unique":        <n>,
+#       "keys_installed_new": <n>,
+#       "keys_preserved":     <n>
+#     },
+#     "sources": {
+#       "inline":  <n>,    -- count of --ssh-key flags
+#       "file":    <n>,    -- count of --ssh-key-file flags
+#       "url":     <n>     -- count of --ssh-key-url flags
+#     },
+#     "manifestFile": "<path or null>",
+#     "ok": true
+#   }
+#
+# Failure NEVER fails the install -- the user has already been created.
+# CODE RED: every write failure logs the exact path + the precise reason
+# (mkdir denied / mode denied / parent missing / disk full / etc).
+#
+# _um_write_summary_json <user> <auth_keys_path> <target>
+#   target = "stdout"  -> write to stdout, prefixed by the marker line
+#                         '---SSH-SUMMARY-JSON---' (a downstream parser
+#                         splits on that marker; nothing else in our
+#                         output ever uses it).
+#   target = "auto"    -> write to <UM_MANIFEST_DIR>/summaries/
+#                         <run-id>__<user>.summary.json (mode 0600,
+#                         dir 0700 root). Pairs 1:1 with the manifest.
+#   target = <path>    -> write to that path (mode 0600). Parent dir
+#                         must exist.
+_um_write_summary_json() {
+    local user="$1" auth_path="$2" target="$3"
+    [ -z "$target" ] && return 0
+    [ "$UM_NO_SUMMARY_JSON" = "1" ] && return 0
+
+    local host
+    host=$(hostname 2>/dev/null || echo unknown)
+    local now
+    now=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)
+    local script_version
+    script_version=$(jq -r '.version // "unknown"' \
+                        "$SCRIPT_DIR/../../scripts/version.json" 2>/dev/null \
+                        || echo unknown)
+
+    # Per-source-type breakdown -- mirrors the CLI flag counts. The
+    # aggregate sources_requested is just the sum.
+    local n_inline=${#UM_SSH_KEYS[@]}
+    local n_file=${#UM_SSH_KEY_FILES[@]}
+    local n_url=${#UM_SSH_KEY_URLS[@]}
+
+    # Manifest path (if a manifest was written this run; null otherwise).
+    local manifest_path="null"
+    if [ "$UM_NO_MANIFEST" != "1" ] && [ -n "${UM_RUN_ID:-}" ]; then
+        manifest_path="\"$(printf '%s' "$UM_MANIFEST_DIR/${UM_RUN_ID}__${user}.json" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')\""
+    fi
+
+    # Build the JSON body in a tmp buffer so writes are atomic. We use
+    # printf with %s + manual escaping for the few free-text fields --
+    # everything else is numeric or comes from a controlled set.
+    local _esc_user _esc_auth _esc_run _esc_host
+    _esc_user=$(printf '%s' "$user"            | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+    _esc_auth=$(printf '%s' "$auth_path"       | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+    _esc_run=$( printf '%s' "${UM_RUN_ID:-}"   | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+    _esc_host=$(printf '%s' "$host"            | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+
+    local body
+    body=$(cat <<EOF
+{
+  "summaryVersion": 1,
+  "writtenAt": "$now",
+  "host": "$_esc_host",
+  "user": "$_esc_user",
+  "runId": "$_esc_run",
+  "scriptVersion": "$script_version",
+  "authorizedKeysFile": "$_esc_auth",
+  "summary": {
+    "sources_requested":  $UM_SSH_SOURCES_REQUESTED,
+    "keys_parsed":        $UM_SSH_KEYS_PARSED,
+    "keys_unique":        $UM_SSH_KEYS_UNIQUE,
+    "keys_installed_new": $UM_SSH_KEYS_INSTALLED_NEW,
+    "keys_preserved":     $UM_SSH_KEYS_PRESERVED
+  },
+  "sources": {
+    "inline": $n_inline,
+    "file":   $n_file,
+    "url":    $n_url
+  },
+  "manifestFile": $manifest_path,
+  "ok": true
+}
+EOF
+)
+
+    case "$target" in
+        stdout)
+            # Marker line lets a wrapper script split parseable JSON from
+            # the human (potentially ANSI-coloured) summary above. The
+            # marker text is fixed and never appears in our log output.
+            printf '\n---SSH-SUMMARY-JSON---\n%s\n' "$body"
+            log_ok "$(um_msg summaryJsonWritten "<stdout>" "${UM_RUN_ID:-}" "$user" "stdout")"
+            return 0
+            ;;
+        auto)
+            # Default location: <manifest-dir>/summaries/<run-id>__<user>.summary.json
+            # Mirrors the manifest layout so rollback + summary stay
+            # paired. If the operator passed --no-manifest there's no
+            # run-id we can sensibly key on -- emit to stdout instead so
+            # the data isn't lost.
+            if [ "$UM_NO_MANIFEST" = "1" ] || [ -z "${UM_RUN_ID:-}" ]; then
+                log_warn "[68][summary-json] no manifest run-id available (--no-manifest set?) -- falling back to stdout"
+                printf '\n---SSH-SUMMARY-JSON---\n%s\n' "$body"
+                return 0
+            fi
+            local sdir="$UM_MANIFEST_DIR/summaries"
+            local spath="$sdir/${UM_RUN_ID}__${user}.summary.json"
+            if ! mkdir -p "$sdir" 2>/dev/null; then
+                log_file_error "$sdir" "$(um_msg summaryJsonWriteFail "$sdir" "mkdir failed (need root or check $UM_MANIFEST_DIR ownership)" | sed 's/^[[:alpha:]]*: //')"
+                return 0
+            fi
+            chmod 0700 "$sdir" 2>/dev/null || true
+            local tmp_json
+            tmp_json=$(mktemp -t 68-summary.XXXXXX) || {
+                log_file_error "$spath" "$(um_msg summaryJsonWriteFail "$spath" "mktemp failed" | sed 's/^[[:alpha:]]*: //')"
+                return 0
+            }
+            if ! printf '%s\n' "$body" > "$tmp_json" 2>/dev/null; then
+                rm -f "$tmp_json"
+                log_file_error "$tmp_json" "$(um_msg summaryJsonWriteFail "$tmp_json" "tmp write failed (disk full? /tmp permissions?)" | sed 's/^[[:alpha:]]*: //')"
+                return 0
+            fi
+            if ! mv "$tmp_json" "$spath" 2>/dev/null; then
+                rm -f "$tmp_json"
+                log_file_error "$spath" "$(um_msg summaryJsonWriteFail "$spath" "mv from tmp failed" | sed 's/^[[:alpha:]]*: //')"
+                return 0
+            fi
+            chmod 0600 "$spath" 2>/dev/null || true
+            log_ok "$(um_msg summaryJsonWritten "$spath" "${UM_RUN_ID:-}" "$user" "auto")"
+            return 0
+            ;;
+        *)
+            # Explicit path. Parent dir must exist; we don't auto-create
+            # arbitrary paths because they may live under user dirs the
+            # operator does NOT want us to mkdir into with mode 0700.
+            local spath="$target"
+            local sparent
+            sparent=$(dirname "$spath")
+            if [ ! -d "$sparent" ]; then
+                log_file_error "$sparent" "$(um_msg summaryJsonWriteFail "$spath" "parent dir does not exist (create it first or use --summary-json=auto)" | sed 's/^[[:alpha:]]*: //')"
+                return 0
+            fi
+            local tmp_json
+            tmp_json=$(mktemp -t 68-summary.XXXXXX) || {
+                log_file_error "$spath" "$(um_msg summaryJsonWriteFail "$spath" "mktemp failed" | sed 's/^[[:alpha:]]*: //')"
+                return 0
+            }
+            if ! printf '%s\n' "$body" > "$tmp_json" 2>/dev/null; then
+                rm -f "$tmp_json"
+                log_file_error "$tmp_json" "$(um_msg summaryJsonWriteFail "$spath" "tmp write failed" | sed 's/^[[:alpha:]]*: //')"
+                return 0
+            fi
+            if ! mv "$tmp_json" "$spath" 2>/dev/null; then
+                rm -f "$tmp_json"
+                log_file_error "$spath" "$(um_msg summaryJsonWriteFail "$spath" "mv from tmp failed (target unwritable?)" | sed 's/^[[:alpha:]]*: //')"
+                return 0
+            fi
+            chmod 0600 "$spath" 2>/dev/null || true
+            log_ok "$(um_msg summaryJsonWritten "$spath" "${UM_RUN_ID:-}" "$user" "explicit-path")"
+            return 0
+            ;;
+    esac
+}
+
 if [ "$UM_SSH_SOURCES_REQUESTED" -gt 0 ]; then
 
   # Build a single newline-separated buffer of every requested key.
