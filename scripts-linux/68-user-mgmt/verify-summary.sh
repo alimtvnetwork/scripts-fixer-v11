@@ -63,6 +63,15 @@
 #   --json                  emit one JSON document per validated file to
 #                           stdout in NDJSON form, plus a final summary
 #                           object on the last line. Suppresses pretty logs.
+#   --results-json [PATH]   emit ONE consolidated JSON report (not NDJSON)
+#                           covering every validated file with its status
+#                           (pass/warn/fail) and full error/warning lists.
+#                           When PATH is given, write to that file (mode
+#                           0600, parent dir must exist) and keep pretty
+#                           logs on stdout. When PATH is omitted (or "-"),
+#                           print the report to stdout and suppress pretty
+#                           logs (same noise rules as --json). Mutually
+#                           exclusive with --json -- pick one wire format.
 #   --strict                promote consistency warnings to errors
 #   --quiet                 suppress per-file pretty output, keep tally
 #   -h | --help             this help
@@ -109,6 +118,8 @@ VS_JSON=0
 VS_STRICT=0
 VS_QUIET=0
 VS_AUTO=0
+VS_RESULTS_JSON=0         # 1 if --results-json was passed
+VS_RESULTS_JSON_PATH=""   # "" or "-" means stdout; else file target
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -130,6 +141,20 @@ while [ $# -gt 0 ]; do
     --run-id)    VS_RUN_FILTER="${2:-}"; shift 2 ;;
     --run-id=*)  VS_RUN_FILTER="${1#--run-id=}"; shift ;;
     --json)      VS_JSON=1;   shift ;;
+    --results-json)
+      VS_RESULTS_JSON=1
+      # Optional value: only consume next arg if it isn't another flag.
+      if [ $# -ge 2 ] && [ -n "${2:-}" ] && [ "${2#-}" = "$2" ]; then
+        VS_RESULTS_JSON_PATH="$2"; shift 2
+      else
+        VS_RESULTS_JSON_PATH=""; shift
+      fi
+      ;;
+    --results-json=*)
+      VS_RESULTS_JSON=1
+      VS_RESULTS_JSON_PATH="${1#--results-json=}"
+      shift
+      ;;
     --strict)    VS_STRICT=1; shift ;;
     --quiet)     VS_QUIET=1;  shift ;;
     --) shift; break ;;
@@ -137,6 +162,22 @@ while [ $# -gt 0 ]; do
     *)  log_err "unexpected positional: '$1' (failure: verify-summary.sh has no positionals -- use --file/--dir)"; exit 64 ;;
   esac
 done
+
+# Mutual exclusion: --json and --results-json speak different formats.
+if [ "$VS_JSON" = "1" ] && [ "$VS_RESULTS_JSON" = "1" ]; then
+  log_err "--json and --results-json are mutually exclusive (failure: pick one wire format -- NDJSON-per-file vs single consolidated report)"
+  exit 64
+fi
+
+# When --results-json writes to stdout (no path / "-"), suppress pretty logs
+# so the report is the only thing on stdout. When a file PATH is given,
+# pretty logs continue normally.
+_vs_results_to_stdout=0
+if [ "$VS_RESULTS_JSON" = "1" ]; then
+  case "$VS_RESULTS_JSON_PATH" in
+    ""|"-") _vs_results_to_stdout=1 ;;
+  esac
+fi
 
 if [ "$VS_AUTO" = "1" ]; then
   _auto_dir="${UM_MANIFEST_DIR:-/var/lib/68-user-mgmt/ssh-key-runs}/summaries"
@@ -215,7 +256,7 @@ if [ "$_have_glob_intent" = "1" ]; then
     exit 2
   fi
 
-  if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ]; then
+  if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ] && [ "$_vs_results_to_stdout" != "1" ]; then
     _patstr=$(printf "'%s' " "${_eff_globs[@]}")
     log_info "$(um_msg summaryDiscoveryBegin "$_eff_root" "${_patstr% }" "$_eff_recursive" "$_eff_follow")"
   fi
@@ -275,7 +316,7 @@ if [ "$_have_glob_intent" = "1" ]; then
       fi
     done
 
-    if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ]; then
+    if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ] && [ "$_vs_results_to_stdout" != "1" ]; then
       log_info "$(um_msg summaryDiscoveryMatch "$_added_for_pat" "$_gp")"
     fi
     [ "$_cap_hit" = "1" ] && break
@@ -287,7 +328,7 @@ if [ "$_have_glob_intent" = "1" ]; then
     log_warn "$(um_msg summaryDiscoveryCapHit "$_vs_default_max" "$_eff_root")"
   fi
 
-  if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ]; then
+  if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ] && [ "$_vs_results_to_stdout" != "1" ]; then
     log_info "$(um_msg summaryDiscoveryTotal "$_discover_total" "${#_eff_globs[@]}" "$_eff_root")"
   fi
 
@@ -571,6 +612,9 @@ vs_emit_result() {
     return 0
   fi
   if [ "$VS_QUIET" = "1" ]; then return 0; fi
+  # When --results-json streams to stdout, the report is the only stdout
+  # payload -- skip per-file pretty lines so it stays parseable.
+  if [ "$_vs_results_to_stdout" = "1" ]; then return 0; fi
 
   case "$status" in
     pass) log_ok   "[pass] $kind v$sv  $path" ;;
@@ -591,6 +635,78 @@ VS_OK=true
 if [ "$VS_FAIL" -gt 0 ]; then VS_OK=false; fi
 if [ "$VS_STRICT" = "1" ] && [ "$VS_WARN" -gt 0 ]; then VS_OK=false; fi
 
+# ---- consolidated --results-json report ----------------------------------
+# Builds ONE JSON document from the per-file VS_RESULTS_NDJSON entries.
+# Schema (reportVersion 1):
+#   {
+#     "reportVersion": 1,
+#     "tool": "verify-summary",
+#     "generatedAt": "<ISO-8601>",
+#     "host": "<hostname>",
+#     "strict": <bool>,
+#     "ok": <bool>,
+#     "summary": { "checked":N, "passed":N, "failed":N, "warned":N },
+#     "results": [ {file,kind,summaryVersion,status,errors[],warnings[]}, ... ]
+#   }
+if [ "$VS_RESULTS_JSON" = "1" ]; then
+  _vs_now=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
+  _vs_host=$(hostname 2>/dev/null || echo "")
+  # Compose results array. If empty, jq -s '.' on /dev/null gives [].
+  _vs_results_arr="[]"
+  if [ "${#VS_RESULTS_NDJSON[@]}" -gt 0 ]; then
+    _vs_results_arr=$(printf '%s\n' "${VS_RESULTS_NDJSON[@]}" | jq -s '.')
+  fi
+  _vs_report=$(jq -n \
+    --argjson c "$VS_TOTAL" --argjson p "$VS_PASS" \
+    --argjson f "$VS_FAIL"  --argjson w "$VS_WARN" \
+    --argjson ok    "$([ "$VS_OK" = "true" ] && echo true || echo false)" \
+    --argjson strict "$([ "$VS_STRICT" = "1" ] && echo true || echo false)" \
+    --arg     ts    "$_vs_now" \
+    --arg     host  "$_vs_host" \
+    --argjson results "$_vs_results_arr" \
+    '{
+        reportVersion: 1,
+        tool: "verify-summary",
+        generatedAt: $ts,
+        host: $host,
+        strict: $strict,
+        ok: $ok,
+        summary: { checked:$c, passed:$p, failed:$f, warned:$w },
+        results: $results
+     }')
+
+  if [ "$_vs_results_to_stdout" = "1" ]; then
+    printf '%s\n' "$_vs_report"
+  else
+    # File target: parent dir must exist; mode 0600. CODE-RED on failure.
+    _vs_target="$VS_RESULTS_JSON_PATH"
+    _vs_parent=$(dirname -- "$_vs_target" 2>/dev/null || echo "")
+    if [ -n "$_vs_parent" ] && [ ! -d "$_vs_parent" ]; then
+      log_file_error "$_vs_target" "parent directory '$_vs_parent' does not exist (failure: create it first or pick another --results-json path)"
+      exit 2
+    fi
+    if [ -n "$_vs_parent" ] && [ ! -w "$_vs_parent" ]; then
+      log_file_error "$_vs_target" "parent directory '$_vs_parent' is not writable (failure: re-run with sudo or fix mode)"
+      exit 2
+    fi
+    _vs_tmp="${_vs_target}.tmp.$$"
+    if ! printf '%s\n' "$_vs_report" > "$_vs_tmp" 2>/dev/null; then
+      log_file_error "$_vs_target" "could not write report (failure: write to '$_vs_tmp' failed -- check disk/perm)"
+      rm -f "$_vs_tmp" 2>/dev/null || true
+      exit 2
+    fi
+    chmod 0600 "$_vs_tmp" 2>/dev/null || true
+    if ! mv -f "$_vs_tmp" "$_vs_target" 2>/dev/null; then
+      log_file_error "$_vs_target" "could not rename temp into place (failure: mv from '$_vs_tmp' failed)"
+      rm -f "$_vs_tmp" 2>/dev/null || true
+      exit 2
+    fi
+    if [ "$VS_QUIET" != "1" ] && [ "$VS_JSON" != "1" ]; then
+      log_ok "wrote consolidated verify-summary report to '$_vs_target' (mode 0600, $VS_TOTAL file(s))"
+    fi
+  fi
+fi
+
 if [ "$VS_JSON" = "1" ]; then
   jq -cn \
     --argjson c "$VS_TOTAL" --argjson p "$VS_PASS" \
@@ -598,7 +714,7 @@ if [ "$VS_JSON" = "1" ]; then
     --argjson ok $([ "$VS_OK" = "true" ] && echo true || echo false) \
     --argjson strict $([ "$VS_STRICT" = "1" ] && echo true || echo false) \
     '{summary:{checked:$c,passed:$p,failed:$f,warned:$w}, strict:$strict, ok:$ok}'
-else
+elif [ "$_vs_results_to_stdout" != "1" ]; then
   printf '\n'
   if [ "$VS_OK" = "true" ]; then
     log_ok "verify-summary: $VS_PASS pass / $VS_WARN warn / $VS_FAIL fail (of $VS_TOTAL) -- OK (exit 0)"
