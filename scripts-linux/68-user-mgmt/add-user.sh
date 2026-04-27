@@ -465,6 +465,7 @@ if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
   _ssh_buf=""
   _ssh_emit() {
     local k="$1"
+    local src="${2:-unknown}"
     # Strip CR + leading/trailing whitespace; ignore blanks + comments.
     k="${k%$'\r'}"
     k="${k#"${k%%[![:space:]]*}"}"
@@ -481,9 +482,13 @@ if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
     if [ -z "$_ssh_buf" ]; then _ssh_buf="$k"
     else                        _ssh_buf="$_ssh_buf"$'\n'"$k"
     fi
+    # Track origin alongside the key for the rollback manifest. Same
+    # index in _UM_SSH_SOURCES corresponds to the same line in _ssh_buf
+    # AFTER de-dup -- we re-derive the mapping below.
+    _UM_SSH_SOURCES+=("$src"$'\t'"$k")
   }
 
-  for k in "${UM_SSH_KEYS[@]}"; do _ssh_emit "$k"; done
+  for k in "${UM_SSH_KEYS[@]}"; do _ssh_emit "$k" "inline"; done
 
   for f in "${UM_SSH_KEY_FILES[@]}"; do
     if [ ! -f "$f" ]; then
@@ -495,7 +500,7 @@ if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
       continue
     fi
     while IFS= read -r line || [ -n "$line" ]; do
-      _ssh_emit "$line"
+      _ssh_emit "$line" "file:$f"
     done < "$f"
   done
 
@@ -506,7 +511,7 @@ if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
   for u in "${UM_SSH_KEY_URLS[@]}"; do
     body=$(_ssh_fetch_url "$u") || continue
     while IFS= read -r line || [ -n "$line" ]; do
-      _ssh_emit "$line"
+      _ssh_emit "$line" "url:$u"
     done <<< "$body"
   done
 
