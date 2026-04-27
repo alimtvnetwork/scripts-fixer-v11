@@ -51,6 +51,20 @@
 #   --https-staging       use Let's Encrypt staging endpoint (cert is NOT
 #                         browser-trusted) -- useful for dry-runs without
 #                         hitting prod rate limits
+#   --dns <provider>      use DNS-01 challenge (cloudflare|route53|
+#                         digitalocean|manual). Required for --wildcard.
+#                         When unset, certbot uses HTTP-01 (port 80 must
+#                         reach the host from the internet).
+#   --dns-credentials <f> path to certbot DNS credentials INI file
+#                         (chmod 600). Required for cloudflare and
+#                         digitalocean. route53 reads ~/.aws/credentials
+#                         or AWS_ACCESS_KEY_ID env vars instead.
+#   --dns-propagation <s> seconds to wait for TXT record propagation
+#                         (default: 60; raise for slow DNS providers)
+#   --wildcard            request a wildcard cert (*.example.com) covering
+#                         the root + every subdomain. Forces DNS-01.
+#                         server_name tokens are reduced to their apex
+#                         (www.example.com -> example.com + *.example.com)
 #   --show-credentials    after a successful 'install', also print the saved
 #                         DB credentials + salts location (otherwise stays
 #                         silent so logs can be safely shared)
@@ -106,6 +120,10 @@ export WP_FIREWALL="0"          # 1 = open WP_SITE_PORT via UFW
 export WP_HTTPS="0"             # 1 = obtain LE cert + redirect HTTP->HTTPS
 export WP_HTTPS_EMAIL=""        # contact email for Let's Encrypt
 export WP_HTTPS_STAGING="0"     # 1 = use LE staging endpoint
+export WP_DNS_PROVIDER=""       # cloudflare|route53|digitalocean|manual ("" = HTTP-01)
+export WP_DNS_CREDENTIALS=""    # path to certbot DNS credentials INI file
+export WP_DNS_PROPAGATION="60"  # seconds to wait for TXT record propagation
+export WP_HTTPS_WILDCARD="0"    # 1 = request *.<apex> + apex (forces DNS-01)
 export WP_SHOW_CREDENTIALS="0"  # 1 = print credentials block after install
 SHOW_CREDS_JSON="0"             # 1 = show-credentials verb emits raw JSON
 
@@ -144,6 +162,10 @@ while [ $# -gt 0 ]; do
         --https)           WP_HTTPS="1"; shift ;;
         --email)           WP_HTTPS_EMAIL="$2"; shift 2 ;;
         --https-staging)   WP_HTTPS_STAGING="1"; shift ;;
+        --dns)             WP_DNS_PROVIDER="$2"; WP_HTTPS="1"; shift 2 ;;
+        --dns-credentials) WP_DNS_CREDENTIALS="$2"; shift 2 ;;
+        --dns-propagation) WP_DNS_PROPAGATION="$2"; shift 2 ;;
+        --wildcard)        WP_HTTPS_WILDCARD="1"; WP_HTTPS="1"; shift ;;
         --show-credentials) WP_SHOW_CREDENTIALS="1"; shift ;;
         --json)            SHOW_CREDS_JSON="1"; shift ;;
         -h|--help)         _show_help; exit 0 ;;
