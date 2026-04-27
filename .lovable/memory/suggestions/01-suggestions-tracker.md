@@ -89,3 +89,23 @@ type: feature
   blocks. A user might want to keep `[Desktop Action new-empty-window]`
   (it's harmless and useful) and only drop the MIME-related ones. Add
   `mimeCleanup.preserveActions[]` to keep named blocks.
+
+## Script 01 — context menu cleanup (added v0.167.0)
+
+- **Glob-aware fileNames**: Right now fileNames[] is exact basename
+  match. Add support for `glob:open-with-code-*.sh` patterns for
+  distros (e.g. Solus) that suffix locale into the script name.
+- **Thunar uca.xml.d XML-aware edit**: Thunar uses a single
+  `~/.config/Thunar/uca.xml` (NOT a directory of files) listing all
+  user-defined actions. Add XML-aware xmlstarlet pass that strips only
+  `<action><name>Open with Code</name>...</action>` blocks.
+- **KDE ServiceMenus**: Dolphin's "Open with Code" lives in
+  `~/.local/share/kio/servicemenus/openwithcode.desktop` and
+  `~/.local/share/kservices5/ServiceMenus/`. Add a fourth allow-list
+  pair when a KDE user reports it.
+- **MATE / LXDE / XFCE custom-actions**: Each desktop env has its own
+  side-channel. Defer until we get a bug report -- premature abstraction
+  otherwise.
+- **Restore command**: Add `verb_restore` that walks `.bak-01ctx-*`,
+  `.bak-01-*`, and `.bak-01de-*` files and copies them back over the
+  current path. Useful if cleanup was too aggressive.

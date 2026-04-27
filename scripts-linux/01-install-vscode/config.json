@@ -36,6 +36,62 @@
       "/var/lib/snapd/desktop/applications",
       "/var/lib/flatpak/exports/share/applications",
       "${HOME}/.local/share/flatpak/exports/share/applications"
-    ]
+    ],
+    "_contextMenuComment": "Nautilus / Nemo / Caja 'Open with Code' shell-script integrations and VS Code-shipped integration scripts. STRICT allow-list: we only delete files whose BASENAME matches contextMenu.fileNames[] AND whose parent dir is in contextMenu.searchDirs[]. Sibling scripts the user wrote themselves (e.g. 'Open with Sublime', 'Compress to zip') are left untouched. Directories are NEVER deleted; only matching files inside them.",
+    "contextMenu": {
+      "enabled": true,
+      "fileNames": [
+        "Open with Code",
+        "Open with Code.sh",
+        "Open in Code",
+        "Open with VSCode",
+        "Open with VS Code",
+        "Open with Code - Insiders",
+        "open-with-code",
+        "open-with-code.sh",
+        "code-context.sh",
+        "vscode-open-here.sh"
+      ],
+      "searchDirs": [
+        "${HOME}/.local/share/nautilus/scripts",
+        "${HOME}/.local/share/nautilus/scripts/Open with Code",
+        "${HOME}/.gnome2/nautilus-scripts",
+        "${HOME}/.local/share/nemo/scripts",
+        "${HOME}/.config/caja/scripts",
+        "${HOME}/.local/share/caja/scripts",
+        "${HOME}/.local/share/Thunar/sendto",
+        "${HOME}/.config/Thunar/uca.xml.d"
+      ],
+      "_actionDirsComment": "Nautilus 'actions' (newer Files >= 43) and Nemo/Caja XML actions live in *.desktop / *.nemo_action / *-action files. We only delete files whose basename matches actionFileNames[] in actionDirs[].",
+      "actionFileNames": [
+        "open-with-code.desktop",
+        "open-with-code.nemo_action",
+        "open-with-code-insiders.desktop",
+        "open-with-code-insiders.nemo_action",
+        "vscode-open.desktop"
+      ],
+      "actionDirs": [
+        "${HOME}/.local/share/file-manager/actions",
+        "/usr/share/file-manager/actions",
+        "${HOME}/.local/share/nemo/actions",
+        "/usr/share/nemo/actions",
+        "${HOME}/.config/caja/actions",
+        "/usr/share/caja/actions"
+      ],
+      "_integrationPathsComment": "VS Code's own install tree ships shell-integration helpers (resources/app/out/vs/workbench/contrib/terminal/browser/media/*.sh and the bin/code-context.sh shim some packagers add). We delete from these locations ONLY when the parent dir under integrationRoots[] still exists AND the file name matches integrationFiles[].",
+      "integrationRoots": [
+        "/usr/share/code/resources/app/bin",
+        "/usr/share/code-insiders/resources/app/bin",
+        "/snap/code/current/usr/share/code/resources/app/bin",
+        "/opt/visual-studio-code/bin",
+        "${HOME}/.vscode/bin",
+        "${HOME}/.vscode-insiders/bin"
+      ],
+      "integrationFiles": [
+        "code-context.sh",
+        "code-shell-integration.sh",
+        "open-with-code.sh"
+      ]
+    }
   }
 }
