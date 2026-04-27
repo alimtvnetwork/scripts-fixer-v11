@@ -140,3 +140,20 @@ type: feature
   `~/.config/kdeglobals` `[General]Keyboard` defaults).
 - **Probe Plasma activity-aware MIME defaults** in
   `~/.config/plasma-org.kde.plasma.desktop-appletsrc`.
+
+## Script 68 -- strict schema (added v0.170.0)
+
+- **Cross-record duplicate detection**: today two records with the same
+  `name` both run; second one hits "user exists" and is a no-op. Catch
+  duplicates pre-flight and warn.
+- **`uid` reservation conflict**: validate that two records don't request
+  the same explicit `uid`.
+- **`--strict-unknown` flag** to escalate `schemaUnknownField` warnings
+  into rejections (today they are warnings only).
+- **Fail-fast mode (`--fail-fast`)**: stop processing the batch on first
+  rejected record instead of continuing.
+- **Schema doc generator**: emit `schema.json` (JSON Schema draft-07)
+  from the same allow-list so external tools (VS Code JSON validation,
+  Ansible templates, CI) can validate at edit time.
+- **Apply same validator to add-group-from-json.sh** -- it has the same
+  silent-skip bug for `members[]`.
