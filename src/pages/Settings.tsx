@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -9,6 +9,15 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import baseConfig from "../../scripts/52-vscode-folder-repair/config.json";
+import {
+  type ConfigPreset,
+  createPreset,
+  deletePreset,
+  getPreset,
+  listPresets,
+  updatePreset,
+} from "@/lib/presets";
+import type { Script52Options } from "@/lib/configSchema";
 
 type Edition = "stable" | "insiders";
 type BridgeStatus = "unknown" | "checking" | "online" | "offline";
