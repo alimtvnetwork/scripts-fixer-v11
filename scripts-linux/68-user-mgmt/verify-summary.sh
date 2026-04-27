@@ -63,6 +63,15 @@
 #   --json                  emit one JSON document per validated file to
 #                           stdout in NDJSON form, plus a final summary
 #                           object on the last line. Suppresses pretty logs.
+#   --results-json [PATH]   emit ONE consolidated JSON report (not NDJSON)
+#                           covering every validated file with its status
+#                           (pass/warn/fail) and full error/warning lists.
+#                           When PATH is given, write to that file (mode
+#                           0600, parent dir must exist) and keep pretty
+#                           logs on stdout. When PATH is omitted (or "-"),
+#                           print the report to stdout and suppress pretty
+#                           logs (same noise rules as --json). Mutually
+#                           exclusive with --json -- pick one wire format.
 #   --strict                promote consistency warnings to errors
 #   --quiet                 suppress per-file pretty output, keep tally
 #   -h | --help             this help
@@ -109,6 +118,8 @@ VS_JSON=0
 VS_STRICT=0
 VS_QUIET=0
 VS_AUTO=0
+VS_RESULTS_JSON=0         # 1 if --results-json was passed
+VS_RESULTS_JSON_PATH=""   # "" or "-" means stdout; else file target
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -130,6 +141,20 @@ while [ $# -gt 0 ]; do
     --run-id)    VS_RUN_FILTER="${2:-}"; shift 2 ;;
     --run-id=*)  VS_RUN_FILTER="${1#--run-id=}"; shift ;;
     --json)      VS_JSON=1;   shift ;;
+    --results-json)
+      VS_RESULTS_JSON=1
+      # Optional value: only consume next arg if it isn't another flag.
+      if [ $# -ge 2 ] && [ -n "${2:-}" ] && [ "${2#-}" = "$2" ]; then
+        VS_RESULTS_JSON_PATH="$2"; shift 2
+      else
+        VS_RESULTS_JSON_PATH=""; shift
+      fi
+      ;;
+    --results-json=*)
+      VS_RESULTS_JSON=1
+      VS_RESULTS_JSON_PATH="${1#--results-json=}"
+      shift
+      ;;
     --strict)    VS_STRICT=1; shift ;;
     --quiet)     VS_QUIET=1;  shift ;;
     --) shift; break ;;
@@ -137,6 +162,22 @@ while [ $# -gt 0 ]; do
     *)  log_err "unexpected positional: '$1' (failure: verify-summary.sh has no positionals -- use --file/--dir)"; exit 64 ;;
   esac
 done
+
+# Mutual exclusion: --json and --results-json speak different formats.
+if [ "$VS_JSON" = "1" ] && [ "$VS_RESULTS_JSON" = "1" ]; then
+  log_err "--json and --results-json are mutually exclusive (failure: pick one wire format -- NDJSON-per-file vs single consolidated report)"
+  exit 64
+fi
+
+# When --results-json writes to stdout (no path / "-"), suppress pretty logs
+# so the report is the only thing on stdout. When a file PATH is given,
+# pretty logs continue normally.
+_vs_results_to_stdout=0
+if [ "$VS_RESULTS_JSON" = "1" ]; then
+  case "$VS_RESULTS_JSON_PATH" in
+    ""|"-") _vs_results_to_stdout=1 ;;
+  esac
+fi
 
 if [ "$VS_AUTO" = "1" ]; then
   _auto_dir="${UM_MANIFEST_DIR:-/var/lib/68-user-mgmt/ssh-key-runs}/summaries"
