@@ -279,6 +279,38 @@ User management (script 68 shortcuts; Linux + macOS):
                                  comment, sudo, system, sshKeys[], sshKeyFiles[]
       --dry-run                Preview every record, change nothing
       Aliases: users-from-json, add-user-from-json
+  edit-user <name> [opts]      Modify an existing local user (Linux + macOS)
+      --rename NEW             Rename the account (applied last)
+      --reset-password         Reset password (combine with --password / --ask)
+      --promote / --demote     Add to / remove from sudo (Linux) / admin (macOS)
+      --add-group G            Add to a supplementary group (repeatable)
+      --remove-group G         Remove from a supplementary group (repeatable)
+      --shell PATH             Change login shell
+      --comment "..."          Update GECOS / RealName
+      --enable / --disable     Unlock / lock the account (mutually exclusive)
+      --dry-run                Preview, change nothing
+      Aliases: user-edit, modify-user
+  edit-users-from-json <file>  Bulk user edits from JSON. Same shapes as
+                               add-users-from-json. Per-record fields:
+                                 name (required), rename, password,
+                                 passwordFile, promote, demote, addGroups[],
+                                 removeGroups[], shell, comment, enable, disable
+      --dry-run                Preview every record, change nothing
+      Aliases: edit-user-from-json, edit-user-json, modify-user-json
+  remove-user <name> [opts]    Delete a local user (idempotent)
+      --purge-home             Also remove the home directory (DESTRUCTIVE)
+      --remove-mail-spool      Linux only: drop /var/mail/<n>
+      --yes                    Skip confirmation prompt
+      --dry-run                Preview, change nothing
+      Aliases: user-remove, delete-user, deluser
+  remove-users-from-json <file> Bulk user removal from JSON. Same shapes as
+                                add-users-from-json plus a bare-string list:
+                                  [ "alice", "bob" ]
+                                Per-record fields: name (required), purgeHome,
+                                purgeProfile (Windows-friendly alias),
+                                removeMailSpool. --yes is always added.
+      --dry-run                Preview every record, change nothing
+      Aliases: remove-user-from-json, remove-user-json, delete-user-json
   useradm-help                 One-page cheat-sheet for the direct-CLI flags
                                (no JSON required). Filtered variants:
                                  user-help    users only
