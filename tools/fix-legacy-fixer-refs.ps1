@@ -11,13 +11,20 @@
 # --------------------------------------------------------------------------
 [CmdletBinding()]
 param(
-    [string]   $RepoRoot   = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
-    [int[]]    $Versions   = @(8, 9, 10),
-    [string]   $Target     = 'v11',
+    [string]   $RepoRoot    = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
+    [int[]]    $Versions    = @(8, 9, 10),
+    [string]   $Target      = 'v11',
     [switch]   $DryRun,
     # JSON summary report. Pass an empty string to suppress, or a path
     # (relative paths resolve against -RepoRoot).
-    [string]   $ReportFile = 'legacy-fix-report.json'
+    [string]   $ReportFile  = 'legacy-fix-report.json',
+    # Timestamped backups: when -Backup is set each rewritten file is copied
+    # to <BackupRoot>\<BackupStamp>\<repo-relative-path> BEFORE being
+    # overwritten. The chosen backup directory is also written to the JSON
+    # report under "backupDir" so orchestrators can restore from it later.
+    [switch]   $Backup,
+    [string]   $BackupRoot  = '.legacy-fix-backups',
+    [string]   $BackupStamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
 )
 
 $ErrorActionPreference = 'Stop'
