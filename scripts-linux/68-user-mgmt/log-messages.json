@@ -55,5 +55,10 @@
     "removeSummary":       "rollback complete for run-id '%s': %s tracked / %s removed / %s already-missing (file: %s)",
     "removeWriteFail":     "failed to rewrite '%s' after rollback (failure: %s -- ORIGINAL FILE PRESERVED at '%s.bak.%s')",
     "removeBackupMade":    "backed up '%s' to '%s' before rollback (restore with: mv '%s' '%s')"
+    ,"macHomeSeeded":       "seeded macOS home '%s' for user '%s' via createhomedir (mode 0755, owner %s:%s)"
+    ,"macHomeSeededFallback":"createhomedir not on PATH -- created '%s' as a bare dir for '%s' (mode 0755, owner %s:%s) (warning: no ~/Library skeleton)"
+    ,"macHomeSeedFail":     "failed to seed macOS home '%s' for user '%s' (failure: %s -- check 'createhomedir -c -u %s' manually)"
+    ,"macPgGidMissing":     "could not resolve numeric primary GID for user '%s' (failure: id/dscl returned nothing -- chown will use name '%s' as a fallback which may not match dscl)"
+    ,"sshChownNumeric":     "set ownership of '%s' to %s:%s (uid:gid resolved numerically -- safe across name/dscl drift)"
   }
 }
