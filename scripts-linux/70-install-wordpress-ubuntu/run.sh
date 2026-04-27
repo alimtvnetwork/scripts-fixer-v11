@@ -246,6 +246,7 @@ _validate_docroot() {
 
 _run_interactive() {
     log_info "[70] Interactive mode -- press Enter to accept the [default]"
+    WP_APT_REFRESH="$(_prompt 'apt refresh mode (none|update|upgrade|dist-upgrade)' "${WP_APT_REFRESH:-none}")"
     WP_DB_ENGINE="$(_prompt    'DB engine (mysql|mariadb)'      "$WP_DB_ENGINE")"
     WP_MYSQL_PORT="$(_prompt   'MySQL port'                     "$WP_MYSQL_PORT")"
     WP_MYSQL_DATADIR="$(_prompt 'MySQL data dir'                "$WP_MYSQL_DATADIR")"
@@ -260,7 +261,7 @@ _run_interactive() {
     WP_DB_PASS="$(_prompt      'DB password (blank = auto-generate)' "$WP_DB_PASS")"
     export WP_DB_ENGINE WP_PHP_VERSION WP_MYSQL_PORT WP_MYSQL_DATADIR \
            WP_INSTALL_PATH WP_SITE_PORT WP_SERVER_NAME \
-           WP_DB_NAME WP_DB_USER WP_DB_PASS
+           WP_DB_NAME WP_DB_USER WP_DB_PASS WP_APT_REFRESH
 }
 
 if [ "$INTERACTIVE" = "1" ] && [ "$VERB" = "install" ]; then
@@ -321,10 +322,77 @@ _install_http() {
 # version >= 7.4 and every required extension loaded. Refuses to return
 # success unless both engines pass strict verify -- nginx + WordPress stages
 # rely on this contract.
+#
+# An optional apt refresh (WP_APT_REFRESH / --apt-refresh) runs as the FIRST
+# step in this stage so the subsequent component_mysql_install and
+# component_php_install package fetches see the freshest mirrors. The refresh
+# mode is read from --apt-refresh, --apt-update, --apt-upgrade, or the
+# config.json prereqs.apt_refresh_mode field, in that priority. Refresh
+# failures are logged but do not abort the prereqs stage; the next apt install
+# call will surface a clearer error if mirrors are truly stale.
+_resolve_apt_refresh_default() {
+    # Honor explicit CLI / env override first.
+    if [ -n "${WP_APT_REFRESH:-}" ]; then return 0; fi
+    if command -v jq >/dev/null 2>&1 && [ -f "$CONFIG" ]; then
+        local from_cfg
+        from_cfg=$(jq -r '.prereqs.apt_refresh_mode // empty' "$CONFIG" 2>/dev/null)
+        if [ -n "$from_cfg" ]; then
+            WP_APT_REFRESH="$from_cfg"
+            return 0
+        fi
+    fi
+    WP_APT_REFRESH="none"
+}
+
+_run_apt_refresh() {
+    _resolve_apt_refresh_default
+    case "$WP_APT_REFRESH" in
+        ""|none)
+            log_info "[70][prereqs][apt] skipped (mode=none)"
+            return 0 ;;
+        update|upgrade|dist-upgrade) ;;
+        *)
+            log_warn "[70][prereqs][apt] invalid mode '$WP_APT_REFRESH' (expected: none|update|upgrade|dist-upgrade) -- defaulting to 'none'"
+            WP_APT_REFRESH="none"
+            return 0 ;;
+    esac
+    if ! command -v apt-get >/dev/null 2>&1; then
+        log_warn "[70][prereqs][apt] apt-get not available on this system -- skipping refresh"
+        return 0
+    fi
+    log_info "[70][prereqs][apt] $WP_APT_REFRESH -- refreshing package index before MySQL + PHP-FPM"
+    if ! sudo apt-get update -y; then
+        log_warn "[70][prereqs][apt] apt-get update FAILED (mode=$WP_APT_REFRESH) -- continuing, MySQL/PHP install may fail if mirrors are stale"
+        return 0
+    fi
+    log_ok "[70][prereqs][apt] apt-get update OK"
+    case "$WP_APT_REFRESH" in
+        update) return 0 ;;
+        upgrade)
+            if sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends; then
+                log_ok "[70][prereqs][apt] apt-get upgrade OK"
+            else
+                log_warn "[70][prereqs][apt] apt-get upgrade FAILED (mode=upgrade) -- continuing"
+            fi ;;
+        dist-upgrade)
+            if sudo DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y --no-install-recommends; then
+                log_ok "[70][prereqs][apt] apt-get dist-upgrade OK"
+            else
+                log_warn "[70][prereqs][apt] apt-get dist-upgrade FAILED (mode=dist-upgrade) -- continuing"
+            fi ;;
+    esac
+    return 0
+}
+
 _install_prerequisites() {
     log_info "[70][prereqs] === prerequisites stage start ==="
+    _resolve_apt_refresh_default
     log_info "[70][prereqs] components: $WP_DB_ENGINE + PHP-FPM ($WP_PHP_VERSION)"
+    log_info "[70][prereqs] apt refresh mode: $WP_APT_REFRESH"
     log_info "[70][prereqs] required PHP extensions: mysqli mbstring xml curl intl gd"
+
+    # Run BEFORE the component installers so both pick up fresh mirrors.
+    _run_apt_refresh
 
     if ! component_mysql_install; then
         log_err "[70][prereqs] MySQL/MariaDB install failed -- cannot continue"
