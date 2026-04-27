@@ -9,9 +9,12 @@
 #    .\config-bridge.ps1 -Token "my-secret"   # require X-Bridge-Token header
 #
 #  Endpoints:
-#    GET  /health                    -> { ok: true, root: "<repo>" }
-#    GET  /config?script=52          -> current config.json contents
-#    POST /config?script=52          -> overwrite config.json (body = new JSON)
+#    GET   /health                   -> { ok: true, root: "<repo>" }
+#    GET   /config?script=52         -> current config.json contents
+#    POST  /config?script=52         -> overwrite config.json (body = full JSON)
+#    PATCH /config?script=52         -> deep-merge partial options into the
+#                                       stored config and return updated JSON
+#                                       (also reachable as POST /config/options)
 #
 #  Security:
 #    - Binds to 127.0.0.1 only (never reachable from the network)
@@ -39,6 +42,42 @@ function Write-FileError {
     param([string]$Path, [string]$Reason)
     # CODE RED: every file/path error must include exact path + reason
     Write-Host "  [FAIL] path: $Path -- reason: $Reason" -ForegroundColor Red
+}
+
+function Merge-Config {
+    # Deep-merge $patch into $base. Objects merge key-by-key; arrays and
+    # scalars from $patch replace whatever was in $base. Returns merged object.
+    param($Base, $Patch)
+    if ($null -eq $Base)  { return $Patch }
+    if ($null -eq $Patch) { return $Base }
+
+    $isBaseObj  = $Base  -is [psobject] -and -not ($Base  -is [Array])
+    $isPatchObj = $Patch -is [psobject] -and -not ($Patch -is [Array])
+    if (-not ($isBaseObj -and $isPatchObj)) { return $Patch }
+
+    $result = [ordered]@{}
+    foreach ($p in $Base.PSObject.Properties)  { $result[$p.Name] = $p.Value }
+    foreach ($p in $Patch.PSObject.Properties) {
+        if ($result.Contains($p.Name)) {
+            $result[$p.Name] = Merge-Config -Base $result[$p.Name] -Patch $p.Value
+        } else {
+            $result[$p.Name] = $p.Value
+        }
+    }
+    return [pscustomobject]$result
+}
+
+function Save-ConfigJson {
+    param([string]$Path, [string]$Json)
+    $dir = Split-Path -Parent $Path
+    if (-not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    if (Test-Path -LiteralPath $Path) {
+        $stamp  = Get-Date -Format "yyyyMMdd-HHmmss"
+        Copy-Item -LiteralPath $Path -Destination "$Path.$stamp.bak" -Force
+    }
+    Set-Content -LiteralPath $Path -Value $Json -Encoding UTF8 -NoNewline
 }
 
 function Send-Json {
