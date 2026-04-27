@@ -54,6 +54,23 @@ SSH authorized_keys (repeatable; both flags may be combined):
                                Existing entries are preserved; duplicates are
                                de-duplicated. Key contents are NEVER logged --
                                only a SHA-256 fingerprint + source.
+  --ssh-key-url <URL>          Fetch keys from an HTTPS URL (e.g.
+                               https://github.com/<user>.keys). Repeatable.
+                               Safety: HTTPS-only, host allowlist enforced,
+                               curl/wget timeout + max-size enforced, redirects
+                               restricted to https + allowlisted hosts. URL
+                               body is parsed exactly like --ssh-key-file
+                               output (one key per line, # comments OK).
+  --ssh-key-url-timeout S      Per-URL timeout in seconds (default: 10).
+  --ssh-key-url-max-bytes N    Max response size per URL (default: 65536).
+  --ssh-key-url-allowlist L    Comma-separated extra hostnames to allow,
+                               e.g. "git.example.com,keys.corp.local".
+                               Default allowlist: github.com, gitlab.com,
+                               codeberg.org, bitbucket.org, launchpad.net.
+                               Use "*" to disable host checking (NOT
+                               recommended -- allows arbitrary egress).
+  --allow-insecure-url         Permit http:// URLs (NOT recommended -- key
+                               can be tampered with in transit).
 EOF
 }
 
@@ -73,6 +90,15 @@ UM_DRY_RUN="${UM_DRY_RUN:-0}"
 # SSH keys -- two parallel arrays, each entry processed in order.
 UM_SSH_KEYS=()        # inline key lines
 UM_SSH_KEY_FILES=()   # file paths
+UM_SSH_KEY_URLS=()    # https URLs
+UM_SSH_URL_TIMEOUT="${UM_SSH_URL_TIMEOUT:-10}"          # seconds, per URL
+UM_SSH_URL_MAX_BYTES="${UM_SSH_URL_MAX_BYTES:-65536}"   # 64 KB
+UM_SSH_URL_ALLOWLIST_EXTRA="${UM_SSH_URL_ALLOWLIST_EXTRA:-}"  # comma list
+UM_SSH_URL_ALLOW_INSECURE="${UM_SSH_URL_ALLOW_INSECURE:-0}"
+# Hard-coded baseline of well-known providers that publish .keys endpoints
+# over HTTPS with stable certs. Operators add to this via the flag rather
+# than edit the script.
+UM_SSH_URL_ALLOWLIST_DEFAULT="github.com,gitlab.com,codeberg.org,bitbucket.org,launchpad.net,api.github.com"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -90,6 +116,11 @@ while [ $# -gt 0 ]; do
     --dry-run)         UM_DRY_RUN=1; shift ;;
     --ssh-key)         UM_SSH_KEYS+=("${2:-}"); shift 2 ;;
     --ssh-key-file)    UM_SSH_KEY_FILES+=("${2:-}"); shift 2 ;;
+    --ssh-key-url)     UM_SSH_KEY_URLS+=("${2:-}"); shift 2 ;;
+    --ssh-key-url-timeout)   UM_SSH_URL_TIMEOUT="${2:-}"; shift 2 ;;
+    --ssh-key-url-max-bytes) UM_SSH_URL_MAX_BYTES="${2:-}"; shift 2 ;;
+    --ssh-key-url-allowlist) UM_SSH_URL_ALLOWLIST_EXTRA="${2:-}"; shift 2 ;;
+    --allow-insecure-url)    UM_SSH_URL_ALLOW_INSECURE=1; shift ;;
     --) shift; break ;;
     -*)
       log_err "unknown option: '$1' (failure: see --help)"
