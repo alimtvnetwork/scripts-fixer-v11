@@ -22,6 +22,7 @@ NO-QUESTIONS MODE active for next 40 tasks (from 2026-04-26): never call ask_que
 - [Questionnaire](mem://features/questionnaire) — Questionnaire system for script 12
 - [Resolved folder](mem://features/resolved-folder) — .resolved/ runtime state persistence
 - [Shared helpers](mem://features/shared-helpers) — Shared PowerShell helper modules
+- [Script 01 MIME cleanup](mem://features/14-script-01-mime-cleanup) — VS Code MIME defaults scrub on uninstall (allow-list, sibling-preserving)
 - [SSH orchestration spec](mem://specs/01-ssh-orchestration) — Multi-OS SSH orchestrator at scripts-orchestrator/, bash CLI, password->key bootstrap, parallel dispatch, kubeadm v1.31 playbook
 - [Script 67 context-menu verifier](mem://features/13-script-67-context-menu-verifier) — Independent post-cleanup scan of Linux desktop/MIME/file-manager surfaces (exit code 4)
 - [No-Questions Mode](mem://preferences/no-questions-mode) — 40-task window: never ask the user; log ambiguities to .lovable/question-and-ambiguity/
