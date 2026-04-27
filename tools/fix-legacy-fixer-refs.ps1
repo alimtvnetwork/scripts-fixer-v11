@@ -172,6 +172,7 @@ if (-not [string]::IsNullOrEmpty($ReportFile)) {
             mode           = $(if ($DryRun) { 'dry-run' } else { 'apply' })
             target         = "scripts-fixer-$Target"
             legacyVersions = $Versions
+            backupDir      = $backupDir   # $null when -Backup was not set
             totals         = [ordered]@{
                 filesChanged      = $changedFiles.Count
                 totalReplacements = $totalReplacements
