@@ -29,22 +29,45 @@ Keep the window open while you use the Settings page. Ctrl+C to stop.
 
 ## Endpoints
 
-| Method | Path                  | Description                         |
-| ------ | --------------------- | ----------------------------------- |
-| GET    | `/health`             | Returns `{ ok, root, scripts }`     |
-| GET    | `/config?script=<id>` | Read current config.json            |
-| POST   | `/config?script=<id>` | Overwrite config.json (body = JSON) |
+| Method | Path                          | Description                                       |
+| ------ | ----------------------------- | ------------------------------------------------- |
+| GET    | `/health`                     | Returns `{ ok, root, scripts }`                   |
+| GET    | `/config?script=<id>`         | Read current config.json                          |
+| POST   | `/config?script=<id>`         | Overwrite config.json (body = full JSON object)   |
+| PATCH  | `/config?script=<id>`         | Deep-merge partial options into stored config     |
+| POST   | `/config/options?script=<id>` | Alias of PATCH (for clients that can't send PATCH)|
 
 Allowed `<id>` values are whitelisted in the script (`52`, `31` by default).
 Add more entries to `$allowedScripts` to expose other configs.
 
+### PATCH / options merge
+
+The Settings UI uses `PATCH /config?script=<id>` to send only the options the
+user changed. The bridge:
+
+1. Loads the existing `config.json` (or `{}` if missing).
+2. Deep-merges the patch object: nested objects merge key-by-key; arrays and
+   scalars in the patch replace whatever was in the stored config.
+3. Backs up the previous file to `config.json.<timestamp>.bak`.
+4. Writes the merged JSON.
+5. Returns `{ ok, path, bytes, config }` where `config` is the updated model.
+
+Example:
+
+```bash
+curl -X PATCH "http://127.0.0.1:7531/config?script=52" \
+     -H "Content-Type: application/json" \
+     -H "X-Bridge-Token: my-secret" \
+     -d '{"contextMenu":{"enabled":true},"edition":"insiders"}'
+```
+
 ## Safety
 
 - Binds to **127.0.0.1 only** — never reachable from the network.
-- Optional `-Token` enforces `X-Bridge-Token: <token>` on writes.
-- Each successful POST first copies the existing file to
+- Optional `-Token` enforces `X-Bridge-Token: <token>` on writes (POST + PATCH).
+- Each successful write first copies the existing file to
   `config.json.<timestamp>.bak` next to it.
-- Rejects any payload that isn't valid JSON.
+- Rejects any payload that isn't valid JSON; PATCH also requires a JSON object.
 - Every file/path error logs **exact path + reason** (CODE RED rule).
 
 ---
