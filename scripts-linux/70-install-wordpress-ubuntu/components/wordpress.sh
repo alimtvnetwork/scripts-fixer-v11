@@ -213,7 +213,15 @@ component_wordpress_verify_config() {
         local val
         val="$(printf '%s\n' "$line" | sed -E "s/.*define\(\s*['\"]${const}['\"]\s*,\s*['\"]([^'\"]*)['\"].*/\1/")"
         if [ "$val" != "$expected" ]; then
-            _record error "db.${const}.mismatch" "$cfg" "define('${const}') = '${val}' but expected '${expected}'" "$expected" "$val" "run 'reconfigure --db-${const,,}=$expected' (or matching flag) to align"
+            # Map DB_NAME/DB_USER/DB_PASSWORD/DB_HOST -> the actual --db-* flag name
+            local _flag="--db-pass"
+            case "$const" in
+                DB_NAME)     _flag="--db-name" ;;
+                DB_USER)     _flag="--db-user" ;;
+                DB_PASSWORD) _flag="--db-pass" ;;
+                DB_HOST)     _flag="--port (or full reinstall for host)" ;;
+            esac
+            _record error "db.${const}.mismatch" "$cfg" "define('${const}') = '${val}' but expected '${expected}'" "$expected" "$val" "run 'reconfigure ${_flag} <value>' to align (or accept current value by re-running with current --db-* flags)"
             return 1
         fi
         return 0
