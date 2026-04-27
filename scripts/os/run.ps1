@@ -160,7 +160,16 @@ function Show-OsHelp {
     Write-Host "    temp-clean [flags]                                     Temp dirs only (legacy helper)" -ForegroundColor Green
     Write-Host "    hib-off | hib-on                                       Disable/enable hibernation" -ForegroundColor Green
     Write-Host "    flp                                                    Enable Win32 long-path support" -ForegroundColor Green
-    Write-Host "    add-user <name> <pass> [pin] [email]                   Create local Windows user" -ForegroundColor Green
+    Write-Host "    add-user <name> <pass> [pin] [email] [flags]          Create local Windows user" -ForegroundColor Green
+    Write-Host "      --admin | --standard          Role (default: standard)" -ForegroundColor DarkGray
+    Write-Host "      --microsoft-account <email>   Note an Outlook/Live email (interactive link)" -ForegroundColor DarkGray
+    Write-Host "      --ms-account-on-logon         Queue ms-settings:emailandaccounts on first logon" -ForegroundColor DarkGray
+    Write-Host "      --ask                         Prompt interactively for missing fields" -ForegroundColor DarkGray
+    Write-Host "    edit-user <name> [flags]                               Modify a local user" -ForegroundColor Green
+    Write-Host "      --rename N | --reset-password P | --promote | --demote" -ForegroundColor DarkGray
+    Write-Host "      --enable | --disable | --add-group G | --remove-group G | --comment T | --ask" -ForegroundColor DarkGray
+    Write-Host "    remove-user <name> [--purge-profile] [--yes] [--ask]   Delete a local user" -ForegroundColor Green
+    Write-Host "    add-user-json <file.json> [--dry-run]                  Bulk users from JSON" -ForegroundColor Green
     Write-Host ""
     Write-Host "  STARTUP MANAGEMENT (cross-OS feature, Windows side)" -ForegroundColor Cyan
     Write-Host "    startup-add app <path> [--method M] [--name N] [--args ...] [--interactive] [--elevated]" -ForegroundColor Green
@@ -331,6 +340,18 @@ switch ($normalizedAction) {
     }
     { $_ -in @("add-user", "adduser", "new-user") } {
         & (Join-Path $scriptDir "helpers\add-user.ps1") @Rest
+        exit $LASTEXITCODE
+    }
+    { $_ -in @("edit-user", "edituser", "modify-user") } {
+        & (Join-Path $scriptDir "helpers\edit-user.ps1") @Rest
+        exit $LASTEXITCODE
+    }
+    { $_ -in @("remove-user", "removeuser", "delete-user", "del-user") } {
+        & (Join-Path $scriptDir "helpers\remove-user.ps1") @Rest
+        exit $LASTEXITCODE
+    }
+    { $_ -in @("add-user-json", "adduserjson", "add-users-json", "user-json") } {
+        & (Join-Path $scriptDir "helpers\add-user-from-json.ps1") @Rest
         exit $LASTEXITCODE
     }
     { $_ -in @("startup-add", "startupadd") } {
