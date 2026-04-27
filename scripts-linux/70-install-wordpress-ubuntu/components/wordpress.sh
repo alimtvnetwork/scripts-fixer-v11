@@ -309,6 +309,15 @@ component_wordpress_install() {
         log_warn "[70][wp] could not fetch fresh salts from api.wordpress.org -- wp-config.php contains the placeholder salts; rotate them manually"
     fi
 
+    # 3b. Strict wp-config.php validation -- DB creds match, 8 unique salts,
+    # no leftover placeholders, PHP syntax clean. Aborts the install if the
+    # generated file is broken so we don't ship a half-baked wp-config.php.
+    if ! component_wordpress_verify_config \
+            "$install_path" "$db_name" "$db_user" "$db_pass" "$db_host" "$db_port"; then
+        log_err "[70][wp] wp-config.php verification failed -- aborting install (see errors above)"
+        return 1
+    fi
+
     # 4. Save credential record (so the operator can recover the auto-generated pw)
     local rec_dir="$ROOT/.installed"
     mkdir -p "$rec_dir"
