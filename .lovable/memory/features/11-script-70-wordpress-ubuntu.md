@@ -79,6 +79,23 @@ directly -- nginx + WordPress only run when prereqs pass strict verify.
 `component_php_verify` (loose check) is unchanged so existing call sites
 (`_check_all`, `php.sh` idempotency check) keep their fast path.
 
+### WordPress install: ZIP-first download (v0.157.0)
+`components/wordpress.sh` now downloads `https://wordpress.org/latest.zip`
+(operator's spec) and extracts via `unzip` into a staging dir, then moves
+`<staging>/wordpress/*` (including dotfiles, via `shopt -s dotglob`) into
+`$WP_INSTALL_PATH`. If `unzip` is missing the script does
+`apt-get install -y unzip` first; if that also fails it transparently
+falls back to the previous `latest.tar.gz` + `tar -xzf --strip-components=1`
+path so minimal images keep working.
+
+The wp-config.php generation step is unchanged: copies
+`wp-config-sample.php`, sed-replaces the three placeholders
+(`database_name_here`, `username_here`, `password_here`) plus the
+`localhost` -> `host:port` swap, then replaces the entire SALT block with
+a fresh fetch from `api.wordpress.org/secret-key/1.1/salt/`. Verified the
+ZIP layout contains a top-level `wordpress/` dir and that
+`wp-config-sample.php` still has all three replacement targets intact.
+
 ### Repository policy (v0.155.0, confirmed)
 `components/php.sh` auto-detects Ubuntu via `/etc/os-release` and decides:
 
