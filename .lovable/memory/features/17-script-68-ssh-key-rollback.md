@@ -292,3 +292,48 @@ recursive `**/*.summary.json` finds date-sharded summaries, missing root
 returns rc=2 with CODE-RED, empty root returns rc=2, `--run-id` filter
 narrows correctly across recursive matches, `--json` mode emits clean
 NDJSON + final tally with no log-info noise.
+
+### Consolidated `--results-json` report (v0.185.0)
+
+`verify-summary.sh` now supports `--results-json [PATH]` to emit ONE
+structured report (not NDJSON) covering every validated file. Mutually
+exclusive with `--json` -- pick one wire format.
+
+Two output modes:
+- **stdout** (no PATH or PATH=`-`): report is the only thing on stdout.
+  All discovery/validator pretty logs are suppressed (same noise rules
+  as `--json`); errors still go to stderr through the logger.
+- **file** (`--results-json /tmp/r.json` or `--results-json=PATH`):
+  written via temp + atomic `mv -f`, mode 0600. Pretty logs continue on
+  stdout. CODE-RED on missing/unwritable parent dir (rc=2) -- the exact
+  parent path is named in the failure reason.
+
+Schema (`reportVersion: 1`):
+```json
+{
+  "reportVersion": 1,
+  "tool": "verify-summary",
+  "generatedAt": "<ISO-8601 UTC>",
+  "host": "<hostname>",
+  "strict": false,
+  "ok": true,
+  "summary": { "checked":N, "passed":N, "failed":N, "warned":N },
+  "results": [
+    { "file":"...", "kind":"user|batch|unknown",
+      "summaryVersion":"1", "status":"pass|warn|fail",
+      "errors":[...], "warnings":[...] }
+  ]
+}
+```
+
+Per-file `errors`/`warnings` carry the same human-readable strings the
+pretty logger prints, so downstream tooling sees the exact same
+diagnostics. Exit code rules unchanged: rc=0 all-pass, rc=1 any fail
+(or any warn under `--strict`), rc=2 bad input, rc=64 bad CLI usage
+(including the new `--json` + `--results-json` mutex).
+
+Verified scenarios: stdout mode produces parseable JSON with zero log
+noise, file mode writes 0600 atomically and keeps pretty logs, mixed
+pass/fail correctly tallied, mutex rejected with rc=64, missing parent
+dir surfaces CODE-RED + rc=2, `--results-json=PATH` form parsed
+correctly, empty discovery still short-circuits with rc=2.
