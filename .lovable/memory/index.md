@@ -22,6 +22,7 @@ NO-QUESTIONS MODE active for next 40 tasks (from 2026-04-26): never call ask_que
 - [Questionnaire](mem://features/questionnaire) — Questionnaire system for script 12
 - [Resolved folder](mem://features/resolved-folder) — .resolved/ runtime state persistence
 - [Shared helpers](mem://features/shared-helpers) — Shared PowerShell helper modules
+- [SSH orchestration spec](mem://specs/01-ssh-orchestration) — Multi-OS SSH orchestrator at scripts-orchestrator/, bash CLI, password->key bootstrap, parallel dispatch, kubeadm v1.31 playbook
 - [Script 67 context-menu verifier](mem://features/13-script-67-context-menu-verifier) — Independent post-cleanup scan of Linux desktop/MIME/file-manager surfaces (exit code 4)
 - [No-Questions Mode](mem://preferences/no-questions-mode) — 40-task window: never ask the user; log ambiguities to .lovable/question-and-ambiguity/
 - [Script 67 binary detector + resolve](mem://features/12-script-67-binary-detector-resolver) — Adds 'binary' install method, two new probe kinds (cmd-no-pkg-owner, symlink-into-roots), and a `resolve` verb that prints single classification line with structured exit code
