@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -6,16 +6,32 @@ import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import baseConfig from "../../scripts/52-vscode-folder-repair/config.json";
 
 type Edition = "stable" | "insiders";
+type BridgeStatus = "unknown" | "checking" | "online" | "offline";
+
+const BRIDGE_KEY = "config-bridge-url";
+const TOKEN_KEY = "config-bridge-token";
+const SCRIPT_ID = "52";
+const CONFIG_PATH = "scripts/52-vscode-folder-repair/config.json";
 
 const Settings = () => {
   const [edition, setEdition] = useState<Edition>("stable");
   const [adminOnly, setAdminOnly] = useState(true);
   const [nonInteractive, setNonInteractive] = useState(false);
   const [requireSignature, setRequireSignature] = useState(false);
+
+  const [bridgeUrl, setBridgeUrl] = useState(
+    () => localStorage.getItem(BRIDGE_KEY) ?? "http://127.0.0.1:7531",
+  );
+  const [bridgeToken, setBridgeToken] = useState(
+    () => localStorage.getItem(TOKEN_KEY) ?? "",
+  );
+  const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("unknown");
+  const [isSaving, setIsSaving] = useState(false);
 
   const merged = useMemo(
     () => ({
@@ -27,6 +43,26 @@ const Settings = () => {
     }),
     [edition, adminOnly, nonInteractive, requireSignature],
   );
+
+  // Persist bridge URL/token between visits
+  useEffect(() => { localStorage.setItem(BRIDGE_KEY, bridgeUrl); }, [bridgeUrl]);
+  useEffect(() => { localStorage.setItem(TOKEN_KEY, bridgeToken); }, [bridgeToken]);
+
+  // Probe bridge health on mount + when URL changes
+  useEffect(() => {
+    let cancelled = false;
+    const probe = async () => {
+      setBridgeStatus("checking");
+      try {
+        const r = await fetch(`${bridgeUrl.replace(/\/$/, "")}/health`, { method: "GET" });
+        if (!cancelled) setBridgeStatus(r.ok ? "online" : "offline");
+      } catch {
+        if (!cancelled) setBridgeStatus("offline");
+      }
+    };
+    probe();
+    return () => { cancelled = true; };
+  }, [bridgeUrl]);
 
   const handleDownload = () => {
     try {
@@ -41,16 +77,59 @@ const Settings = () => {
       URL.revokeObjectURL(url);
       toast({
         title: "config.json generated",
-        description: "Drop it into scripts/52-vscode-folder-repair/ to apply.",
+        description: `Drop it into ${CONFIG_PATH} to apply.`,
       });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      // CODE RED: include exact path + reason
       toast({
         title: "Download failed",
-        description: `path: scripts/52-vscode-folder-repair/config.json — reason: ${reason}`,
+        description: `path: ${CONFIG_PATH} — reason: ${reason}`,
         variant: "destructive",
       });
+    }
+  };
+
+  const handleSaveToBridge = async () => {
+    setIsSaving(true);
+    const endpoint = `${bridgeUrl.replace(/\/$/, "")}/config?script=${SCRIPT_ID}`;
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (bridgeToken) headers["X-Bridge-Token"] = bridgeToken;
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(merged, null, 2),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // CODE RED: include exact path + reason
+        const path = (data as { path?: string }).path ?? CONFIG_PATH;
+        const reason =
+          (data as { reason?: string; error?: string }).reason ??
+          (data as { error?: string }).error ??
+          `HTTP ${res.status}`;
+        throw new Error(`path: ${path} — reason: ${reason}`);
+      }
+
+      toast({
+        title: "Saved to local config.json",
+        description: `${(data as { path?: string }).path ?? CONFIG_PATH} (${(data as { bytes?: number }).bytes ?? "?"} bytes)`,
+      });
+      setBridgeStatus("online");
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      setBridgeStatus("offline");
+      toast({
+        title: "Bridge save failed",
+        description: reason.includes("path:")
+          ? reason
+          : `path: ${endpoint} — reason: ${reason}. Is config-bridge.ps1 running?`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
