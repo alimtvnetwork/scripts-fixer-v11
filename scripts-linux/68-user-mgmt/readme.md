@@ -203,4 +203,52 @@ bash scripts-linux/68-user-mgmt/tests/01-smoke.sh
 
 Runs in dry-run mode — needs no root, never mutates the host. Verifies
 dispatcher routing, CLI parsing, JSON shape auto-detect (object / array /
+
+## SSH key lifecycle (added in 0.192.0)
+
+Three new leaves give per-host SSH key control. All three update the
+cross-OS ledger at `~/.lovable/ssh-keys-state.json` so the same key state
+can be inspected from Windows or Linux.
+
+| Subverb        | Leaf            | Purpose                                              |
+|----------------|-----------------|------------------------------------------------------|
+| `gen-key`      | `gen-key.sh`    | generate ed25519 / rsa / ecdsa key pair (`--ask` ok) |
+| `install-key`  | (inline)        | append a public key to a user's `authorized_keys`    |
+| `revoke-key`   | `remove-ssh-keys.sh` | remove keys by `--fingerprint`, `--comment`, `--key`, or `--all` |
+
+**Idempotency contract** — `install-key` reads the target
+`authorized_keys`, splits each line on whitespace, compares **only the
+key body** (column 2) against the incoming key body, and appends only
+when no match exists. Comments and options are ignored for the
+comparison. Re-running with the same key is a no-op.
+
+## Multi-host fan-out (added in 0.193.0)
+
+Playbooks under `scripts-orchestrator/playbooks/` apply this module
+across N hosts in parallel via `lib/04-parallel.sh`:
+
+| Playbook                 | What it fans out                                       |
+|--------------------------|--------------------------------------------------------|
+| `users-fanout`           | a `users.json` bundle to every host                    |
+| `groups-fanout`          | a `groups.json` bundle to every host                   |
+| `ssh-keys-fanout`        | a key bundle (ed25519 `.pub` files)                    |
+
+Each playbook emits a `---FANOUT-RESULT-JSON---` audit line per host and
+a `---FANOUT-SUMMARY-JSON---` roll-up at the end (host counts, pass /
+fail / skipped, total wall-time). Pass `--with-env KEY=VAL` and
+`--with-file LOCAL:REMOTE` to thread secrets and bundles through.
+
+## Animated demos (vhs)
+
+Tape sources live in `tests/vhs/`. Render with
+[charmbracelet/vhs](https://github.com/charmbracelet/vhs):
+
+```bash
+vhs scripts-linux/68-user-mgmt/tests/vhs/add-user-ask.tape
+vhs scripts-linux/68-user-mgmt/tests/vhs/install-key-idempotent.tape
+```
+
+GIFs are written next to the `.tape` files. They are **not** committed
+to git — render on demand.
+
 wrapped), and the CODE RED missing-file error path.
