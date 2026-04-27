@@ -134,6 +134,7 @@ UM_COMMENT=""
 UM_SUDO=0
 UM_SYSTEM=0
 UM_DRY_RUN="${UM_DRY_RUN:-0}"
+UM_ASK="${UM_ASK:-0}"
 # SSH keys -- two parallel arrays, each entry processed in order.
 UM_SSH_KEYS=()        # inline key lines
 UM_SSH_KEY_FILES=()   # file paths
