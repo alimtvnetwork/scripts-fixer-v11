@@ -204,7 +204,7 @@ component_https_install() {
     fi
 
     log_info "[70][https] === HTTPS stage start ==="
-    log_info "[70][https] server_name='${WP_SERVER_NAME}' http_server='${WP_HTTP_SERVER}' staging='${WP_HTTPS_STAGING:-0}'"
+    log_info "[70][https] server_name='${WP_SERVER_NAME:-}' http_server='${WP_HTTP_SERVER:-nginx}' staging='${WP_HTTPS_STAGING:-0}'"
 
     # 1. Refuse non-FQDN setups loudly -- Let's Encrypt will reject them and
     #    burn rate-limit budget on the way out.
