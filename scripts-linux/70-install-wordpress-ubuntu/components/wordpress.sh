@@ -319,6 +319,13 @@ _wp_write_config() {
 
     if [ -n "$salts" ]; then
         local tmp; tmp="$(mktemp)"
+        # NOTE: WordPress ships wp-config-sample.php with CRLF line endings,
+        # which makes the `;$` end-of-line anchor below fail to match the
+        # placeholder salt lines (the trailing \r sits between ; and \n).
+        # Normalise to LF first so the awk strip works for BOTH the initial
+        # install (CRLF source) and reconfigure-on-existing (LF after first
+        # write). Without this, salts pile up on every reconfigure call.
+        sudo sed -i 's/\r$//' "$cfg"
         # shellcheck disable=SC2024 # tmp is operator-owned (mktemp); no sudo redirect needed
         sudo awk '!/define\(.*(AUTH_KEY|SECURE_AUTH_KEY|LOGGED_IN_KEY|NONCE_KEY|AUTH_SALT|SECURE_AUTH_SALT|LOGGED_IN_SALT|NONCE_SALT).*\);$/' \
             "$cfg" > "$tmp"
