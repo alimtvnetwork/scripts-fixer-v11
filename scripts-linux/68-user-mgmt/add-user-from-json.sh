@@ -91,27 +91,10 @@ um_detect_os || exit $?
 um_require_root || exit $?
 if [ "$UM_DRY_RUN" = "1" ]; then log_warn "$(um_msg dryRunBanner)"; fi
 
-# Validate JSON + normalize into an array on stdout.
-#  - bare object with .users  -> .users
-#  - bare array               -> as is
-#  - bare object              -> [ . ]
-#  - anything else            -> error
-normalised=$(jq -c '
-  if type == "object" and has("users") and (.users|type=="array") then .users
-  elif type == "array" then .
-  elif type == "object" then [ . ]
-  else error("top-level must be object or array")
-  end
-' "$UM_FILE" 2>/tmp/68-jq-err.$$)
-jq_rc=$?
-if [ "$jq_rc" -ne 0 ]; then
-  err_text=$(cat /tmp/68-jq-err.$$ 2>/dev/null); rm -f /tmp/68-jq-err.$$
-  log_err "$(um_msg jsonParseFail "$UM_FILE" "$err_text")"
-  exit 2
-fi
-rm -f /tmp/68-jq-err.$$
-
-count=$(jq 'length' <<< "$normalised")
+# Validate JSON + normalise into an array (shared helper).
+um_schema_normalize_array "$UM_FILE" "users" || exit 2
+normalised="$UM_NORMALIZED_JSON"
+count="$UM_NORMALIZED_COUNT"
 log_info "loaded $count user record(s) from '$UM_FILE'"
 
 # Generate a single batch run-id up-front (unless the operator opted out
@@ -151,61 +134,13 @@ while [ "$i" -lt "$count" ]; do
   rec=$(jq -c ".[$i]" <<< "$normalised")
 
   # ---- Strict schema validation (v0.170.0) ----
-  # Run validator, capture all error/warn rows, then report each one
-  # with a properly-templated log line. No silent skips.
-  validation_out=$(_validate_user_record "$rec")
-  err_count=0
-  if [ -n "$validation_out" ]; then
-    while IFS=$'\t' read -r severity field reason; do
-      [ -z "$severity" ] && continue
-      case "$severity" in
-        ERROR)
-          err_count=$((err_count+1))
-          # Disambiguate empty/missing/type/array errors into the right template.
-          case "$reason" in
-            "missing required field")
-              log_err "$(um_msg jsonRecordBad "$i" "$UM_FILE" "$field")" ;;
-            "empty string"|"null value")
-              log_err "$(um_msg schemaFieldEmpty "$i" "$UM_FILE" "$field")" ;;
-            wrong\ type:*)
-              # reason format: "wrong type: expected X, got Y" or "...(value=...)".
-              # For array-item errors the field already contains "name[idx]".
-              if printf '%s' "$field" | grep -qE '\[[0-9]+\]$'; then
-                base="${field%[*}"; idx="${field##*[}"; idx="${idx%]}"
-                got=$(printf '%s' "$reason" | sed -nE 's/.*got ([a-z]+).*/\1/p')
-                val=$(printf '%s' "$reason" | sed -nE 's/.*value=(.*)\)$/\1/p')
-                log_err "$(um_msg schemaArrayItemType "$i" "$UM_FILE" "$base" "$idx" "$got" "$val")"
-              else
-                expected=$(printf '%s' "$reason" | sed -nE 's/.*expected ([^,]+),.*/\1/p')
-                got=$(printf '%s'      "$reason" | sed -nE 's/.*got ([a-z]+).*/\1/p')
-                log_err "$(um_msg schemaFieldType "$i" "$UM_FILE" "$field" "$expected" "$got")"
-              fi ;;
-            *)
-              # Generic fall-through for messages like "not a non-negative integer (X)"
-              # or "string is not numeric (X)".
-              log_err "JSON record #$i in '$UM_FILE' field '$field': $reason (failure: rejecting record)"
-              ;;
-          esac
-          ;;
-        WARN)
-          log_warn "$(um_msg schemaUnknownField "$i" "$UM_FILE" "$field" "$UM_ALLOWED_FIELDS")"
-          ;;
-      esac
-    done <<< "$validation_out"
-  fi
+  validation_out=$(um_schema_validate_record "$rec" "$UM_ALLOWED_FIELDS" \
+    "$UM_SCHEMA_REQUIRED" "$UM_SCHEMA_FIELDS")
+  um_schema_report "$i" "$UM_FILE" "$validation_out" "rich" "$UM_ALLOWED_FIELDS"
+  name=$(um_schema_record_name "$rec")
 
-  # name is needed for the rejection summary line; pull it AFTER validation
-  # so we don't crash on records missing the field. Guard against records
-  # that aren't objects at all (e.g. bare strings/numbers) -- jq can't
-  # .name a string.
-  if [ "$(jq -r 'type' <<< "$rec")" = "object" ]; then
-    name=$(jq -r '.name // "<missing>"' <<< "$rec")
-  else
-    name="<not-an-object>"
-  fi
-
-  if [ "$err_count" -gt 0 ]; then
-    log_err "$(um_msg schemaRecordRejected "$i" "$UM_FILE" "$name" "$err_count")"
+  if [ "$UM_SCHEMA_ERR_COUNT" -gt 0 ]; then
+    log_err "$(um_msg schemaRecordRejected "$i" "$UM_FILE" "$name" "$UM_SCHEMA_ERR_COUNT")"
     rc_total=1
     i=$((i+1)); continue
   fi
