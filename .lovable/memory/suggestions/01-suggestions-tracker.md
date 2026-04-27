@@ -53,3 +53,18 @@ type: feature
 - [ ] Linux/macOS support for scripts
 - [ ] Docker, Rust script additions
 - [ ] Model catalog web viewer (React page in the project)
+
+## Script 01 — MIME cleanup (added v0.165.0)
+
+- **Snap user-namespace mimeapps**: Snap installs of VS Code keep a
+  per-revision `~/snap/code/current/.config/mimeapps.list` that survives
+  `snap remove`. Add it to `mimeCleanup.userFiles[]` with a glob
+  expansion step (current shell expansion only handles `${HOME}`).
+- **xdg-mime re-default**: After scrubbing, optionally call
+  `xdg-mime default <fallback>.desktop <mimetype>` to point each scrubbed
+  MIME at a sensible runner-up (e.g. `gedit.desktop` for `text/plain`).
+  Needs an opinionated fallback table -- defer until a user asks.
+- **Dry-run flag**: Add `verb_uninstall --dry-run` that reports which
+  lines WOULD be scrubbed without writing. Useful for ops review.
+- **Backup retention**: `.bak-01-<timestamp>` files accumulate over
+  repeat uninstalls. Add a 30-day reaper or keep-last-N policy.
