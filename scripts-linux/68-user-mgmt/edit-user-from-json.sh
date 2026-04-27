@@ -31,6 +31,7 @@
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/helpers/_common.sh"
+. "$SCRIPT_DIR/helpers/_schema.sh"
 
 # As of v0.203.0 this loader applies each record IN-PROCESS via the shared
 # um_user_modify helper rather than forking `bash edit-user.sh` per row.
@@ -42,83 +43,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # record on its own.
 UM_ALLOWED_FIELDS="name rename password passwordFile promote demote addGroups removeGroups shell comment enable disable"
 
-# Validate one record's schema. Emits TSV rows on stdout:
-#   ERROR<TAB>field<TAB>reason
-#   WARN <TAB>field<TAB>reason
-_validate_edit_record() {
-    local rec="$1"
-    local toptype
-    toptype=$(jq -r 'type' <<< "$rec")
-    if [ "$toptype" != "object" ]; then
-        printf 'ERROR\t<root>\tnot an object (got %s)\n' "$toptype"
-        return 0
-    fi
-    jq -r --arg allowed "$UM_ALLOWED_FIELDS" '
-        def expect(field; want):
-            if has(field) then
-                (.[field] | type) as $t
-                | if $t != want then "ERROR\t\(field)\twrong type: expected \(want), got \($t)"
-                  else empty end
-            else empty end;
-
-        def expect_nonempty_string(field):
-            if has(field) then
-                (.[field]) as $v | ($v | type) as $t
-                | if $t == "null" then "ERROR\t\(field)\tnull value"
-                  elif $t != "string" then "ERROR\t\(field)\twrong type: expected string, got \($t)"
-                  elif ($v | length) == 0 then "ERROR\t\(field)\tempty string"
-                  else empty end
-            else empty end;
-
-        def expect_str_array(field):
-            if has(field) then
-                (.[field]) as $arr | ($arr | type) as $t
-                | if $t != "array" then "ERROR\t\(field)\twrong type: expected array, got \($t) -- did you forget the [...] brackets?"
-                  else
-                      $arr | to_entries | map(
-                          (.value | type) as $vt
-                          | if $vt != "string" then "ERROR\t\(field)[\(.key)]\twrong type: expected non-empty string, got \($vt) (value=\(.value | tostring | .[0:80]))"
-                            elif (.value | length) == 0 then "ERROR\t\(field)[\(.key)]\tempty string"
-                            else empty end
-                      ) | .[]
-                  end
-            else empty end;
-
-        # Required: name.
-        ( if has("name") | not then "ERROR\tname\tmissing required field" else empty end ),
-        expect_nonempty_string("name"),
-
-        # Optional scalars.
-        expect_nonempty_string("rename"),
-        expect_nonempty_string("password"),
-        expect_nonempty_string("passwordFile"),
-        expect_nonempty_string("shell"),
-        expect("comment"; "string"),
-        expect("promote"; "boolean"),
-        expect("demote"; "boolean"),
-        expect("enable"; "boolean"),
-        expect("disable"; "boolean"),
-
-        # Arrays.
-        expect_str_array("addGroups"),
-        expect_str_array("removeGroups"),
-
-        # Mutually-exclusive intent check.
-        ( if (.promote == true) and (.demote == true) then
-              "ERROR\tpromote\tcannot be true while demote is also true"
-          else empty end ),
-        ( if (.enable == true) and (.disable == true) then
-              "ERROR\tenable\tcannot be true while disable is also true"
-          else empty end ),
-
-        # Unknown-field warnings (typo guard).
-        ( ($allowed | split(" ")) as $known
-          | keys[]
-          | select(. as $k | ($known | index($k)) | not)
-          | "WARN\t\(.)\tunknown field (allowed: \($allowed))"
-        )
-    ' <<< "$rec" 2>/dev/null
-}
+# Schema (consumed by helpers/_schema.sh):
+UM_SCHEMA_REQUIRED="name"
+UM_SCHEMA_FIELDS="name:nestr rename:nestr password:nestr passwordFile:nestr shell:nestr comment:str promote:bool demote:bool enable:bool disable:bool addGroups:nestrarr removeGroups:nestrarr"
+UM_SCHEMA_MUTEX="promote,demote enable,disable"
 
 um_usage() {
   cat <<EOF
@@ -168,23 +96,9 @@ um_detect_os || exit $?
 um_require_root || exit $?
 if [ "$UM_DRY_RUN" = "1" ]; then log_warn "$(um_msg dryRunBanner 2>/dev/null || echo "[dry-run] no host mutation will occur")"; fi
 
-# Normalise into an array on stdout.
-normalised=$(jq -c '
-  if   type == "object" and has("users") and (.users|type=="array") then .users
-  elif type == "array"  then .
-  elif type == "object" then [ . ]
-  else error("top-level must be object or array")
-  end
-' "$UM_FILE" 2>/tmp/68-jq-err.$$)
-jq_rc=$?
-if [ "$jq_rc" -ne 0 ]; then
-  err_text=$(cat /tmp/68-jq-err.$$ 2>/dev/null); rm -f /tmp/68-jq-err.$$
-  log_err "JSON parse failed for exact path: '$UM_FILE' (failure: $err_text)"
-  exit 2
-fi
-rm -f /tmp/68-jq-err.$$
-
-count=$(jq 'length' <<< "$normalised")
+um_schema_normalize_array "$UM_FILE" "users" || exit 2
+normalised="$UM_NORMALIZED_JSON"
+count="$UM_NORMALIZED_COUNT"
 log_info "loaded $count user-edit record(s) from '$UM_FILE'"
 
 # In-process applicator. Mirrors the orchestration that edit-user.sh does
@@ -293,31 +207,13 @@ while [ "$i" -lt "$count" ]; do
   rec=$(jq -c ".[$i]" <<< "$normalised")
 
   # ---- Strict schema validation ----
-  validation_out=$(_validate_edit_record "$rec")
-  err_count=0
-  if [ -n "$validation_out" ]; then
-    while IFS=$'\t' read -r severity field reason; do
-      [ -z "$severity" ] && continue
-      case "$severity" in
-        ERROR)
-          err_count=$((err_count+1))
-          log_err "JSON record #$i in '$UM_FILE' field '$field': $reason (failure: rejecting record)"
-          ;;
-        WARN)
-          log_warn "JSON record #$i in '$UM_FILE' field '$field': $reason"
-          ;;
-      esac
-    done <<< "$validation_out"
-  fi
+  validation_out=$(um_schema_validate_record "$rec" "$UM_ALLOWED_FIELDS" \
+    "$UM_SCHEMA_REQUIRED" "$UM_SCHEMA_FIELDS" "$UM_SCHEMA_MUTEX")
+  um_schema_report "$i" "$UM_FILE" "$validation_out" "plain"
+  name=$(um_schema_record_name "$rec")
 
-  if [ "$(jq -r 'type' <<< "$rec")" = "object" ]; then
-    name=$(jq -r '.name // "<missing>"' <<< "$rec")
-  else
-    name="<not-an-object>"
-  fi
-
-  if [ "$err_count" -gt 0 ]; then
-    log_err "rejected record #$i in '$UM_FILE' for user='$name' ($err_count schema error(s))"
+  if [ "$UM_SCHEMA_ERR_COUNT" -gt 0 ]; then
+    log_err "rejected record #$i in '$UM_FILE' for user='$name' ($UM_SCHEMA_ERR_COUNT schema error(s))"
     rc_total=1
     i=$((i+1)); continue
   fi
