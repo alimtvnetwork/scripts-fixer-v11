@@ -587,6 +587,10 @@ _clean_context_menu_entries() {
             log_warn "[01]   refuse to delete directory (allow-list is files only): $path"
             return 0
         fi
+        if ! _scope_can_modify; then
+            log_info "[01]   REPORT-ONLY -- would remove $label: $path"
+            return 0
+        fi
         # Snapshot before delete so the user can recover.
         local backup="${path}.bak-01ctx-${ts}"
         if ! $sudo_pfx cp -p "$path" "$backup" 2>/dev/null; then
