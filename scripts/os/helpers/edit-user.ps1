@@ -18,6 +18,42 @@
       --comment <text>              Set the account comment (we use this for email)
       --ask                         Prompt interactively
       --dry-run                     Print actions, change nothing
+
+    Dry-run effect per flag (with --dry-run, every mutating call is
+    routed through Invoke-UserModify and logged as
+    "[dry-run] <command>"; the host is NOT modified):
+      <name>                        would resolve the account; missing
+                                    user -> [FAIL] and abort the record
+                                    (no mutation either way)
+      --rename <newName>            would call Rename-LocalUser -Name
+                                    <name> -NewName <newName>; applied
+                                    LAST so other ops still target the
+                                    original name
+      --reset-password <newPass>    would call Set-LocalUser -Name
+                                    <name> -Password <masked>; value
+                                    NEVER logged
+      --promote                     would call Add-LocalGroupMember
+                                    -Group Administrators -Member <name>
+      --demote                      would call Remove-LocalGroupMember
+                                    -Group Administrators -Member <name>
+      --add-group <name>            would call Add-LocalGroupMember once
+                                    per group (comma-list expanded first)
+      --remove-group <name>         would call Remove-LocalGroupMember
+                                    once per group
+      --enable                      would call Enable-LocalUser -Name <name>
+      --disable                     would call Disable-LocalUser -Name <name>
+      --comment <text>              would call net.exe user <name>
+                                    /comment:"<text>" (used as the email
+                                    field by convention)
+      --ask                         prompts BEFORE the dry-run banner;
+                                    collected values still drive the
+                                    would-do log lines
+      --dry-run                     this flag itself; emits the dry-run
+                                    banner and gates every Set-LocalUser
+                                    / Rename-LocalUser / Add-LocalGroup-
+                                    Member / Remove-LocalGroupMember /
+                                    Enable-LocalUser / Disable-LocalUser /
+                                    net.exe call
 #>
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Argv = @())
 

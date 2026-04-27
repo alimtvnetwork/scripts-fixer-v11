@@ -13,6 +13,27 @@
       --yes             Skip the confirmation prompt
       --ask             Prompt interactively
       --dry-run         Print what would be removed
+
+    Dry-run effect per flag (with --dry-run, the plan is printed first,
+    the y/N confirmation prompt is BYPASSED, and every mutating call is
+    logged as "[dry-run] <command>"; the host is NOT modified):
+      <name>            would resolve account + profile path, then call
+                        Remove-LocalUser -Name <name> (SID <sid>).
+                        Absent account -> [WARN] "nothing to remove"
+                        and exit 0 (idempotent); no mutation either way.
+      --purge-profile   would 'Remove-Item -LiteralPath C:\Users\<name>
+                        -Recurse -Force' AFTER account delete.
+                        DESTRUCTIVE in real-run; in dry-run only the
+                        Remove-Item command is logged.
+      --purge-home      same as --purge-profile (alias only); same
+                        dry-run line.
+      --yes             no dry-run effect (skips the y/N confirmation;
+                        under --dry-run the prompt is already skipped)
+      --ask             prompts BEFORE the dry-run banner; collected
+                        answers still drive the would-do log lines
+      --dry-run         this flag itself; bypasses the y/N prompt, emits
+                        the dry-run banner, and gates every Remove-
+                        LocalUser / Remove-Item call
 #>
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Argv = @())
 
