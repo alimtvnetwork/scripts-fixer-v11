@@ -145,12 +145,15 @@ component_wordpress_verify_config() {
 
     # Findings collector -- stays in memory until end-of-function then either
     # gets logged (text mode) or emitted as JSON. Each entry encoded as a
-    # tab-separated record: severity\tcheck\tpath\tmsg\texpected\tactual\tfix
+    # record delimited by ASCII Unit Separator (\x1f) so empty fields are
+    # preserved (bash `read` with whitespace IFS collapses runs of TABs --
+    # \x1f is non-whitespace and survives empty middles intact):
+    #   severity\x1fcheck\x1fpath\x1fmsg\x1fexpected\x1factual\x1ffix
     local -a _findings=()
     _record() {
         # _record <severity> <check> <path> <message> <expected> <actual> <fix>
-        # Use a tab separator (TAB never appears in our IDs/paths/messages here).
-        _findings+=("$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$1" "$2" "$3" "$4" "$5" "$6" "$7")")
+        _findings+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
+                       "$1" "$2" "$3" "$4" "$5" "$6" "$7")")
         if [ "$json_mode" != "1" ]; then
             case "$1" in
                 error) log_file_error "$3" "$4" ;;
