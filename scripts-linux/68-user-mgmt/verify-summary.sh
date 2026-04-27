@@ -60,6 +60,22 @@
 #                           the resolved root. Combinable with --file/--dir.
 #   --run-id ID             when combined with --dir/--auto, only validate
 #                           files whose name starts with "<ID>__"
+#   --since VALUE           only validate summary files whose mtime is
+#                           STRICTLY AFTER a cutoff. VALUE is either:
+#                             * a run-id matching YYYYMMDD-HHMMSS-<suffix>,
+#                               in which case the cutoff is resolved from
+#                               (a) the writtenAt of any discovered summary
+#                               with that runId, falling back to
+#                               (b) the mtime of the matching manifest
+#                               file '<UM_MANIFEST_DIR>/<run-id>__*.json'.
+#                             * any timestamp 'date -d' can parse
+#                               (ISO-8601 like '2026-04-27T15:30:45Z',
+#                                '@<epoch>', 'yesterday', etc.).
+#                           Files older than the cutoff are silently dropped
+#                           from the validation set (counted in the post-run
+#                           summary). Comparison uses filesystem mtime; copy
+#                           or restore operations that touch mtime will
+#                           shift this filter.
 #   --json                  emit one JSON document per validated file to
 #                           stdout in NDJSON form, plus a final summary
 #                           object on the last line. Suppresses pretty logs.
@@ -102,6 +118,9 @@ Examples:
   bash verify-summary.sh --root /srv/runs --glob 'summaries/*.summary.json'
   bash verify-summary.sh --root /srv/runs --recursive --glob '**/*.summary.json'
   bash verify-summary.sh --root /srv/runs --glob '2026-*/summaries/*.summary.json' --json
+  bash verify-summary.sh --auto --since 20260427-101530-abcd     # only newer than that run
+  bash verify-summary.sh --discover --since '2026-04-27T00:00:00Z'
+  bash verify-summary.sh --auto --since 'yesterday' --json
 EOF
 }
 
@@ -120,6 +139,7 @@ VS_QUIET=0
 VS_AUTO=0
 VS_RESULTS_JSON=0         # 1 if --results-json was passed
 VS_RESULTS_JSON_PATH=""   # "" or "-" means stdout; else file target
+VS_SINCE_RAW=""           # raw --since input (run-id or timestamp); "" = disabled
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -140,6 +160,8 @@ while [ $# -gt 0 ]; do
     --no-follow-symlinks) VS_FOLLOW_SYMLINKS=0; shift ;;
     --run-id)    VS_RUN_FILTER="${2:-}"; shift 2 ;;
     --run-id=*)  VS_RUN_FILTER="${1#--run-id=}"; shift ;;
+    --since)     VS_SINCE_RAW="${2:-}"; shift 2 ;;
+    --since=*)   VS_SINCE_RAW="${1#--since=}"; shift ;;
     --json)      VS_JSON=1;   shift ;;
     --results-json)
       VS_RESULTS_JSON=1
