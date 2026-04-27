@@ -237,8 +237,17 @@ _check_all() {
     local rc=0
     component_mysql_verify     && log_ok "[70][verify] mysql OK"     || { log_err "[70][verify] mysql FAILED";     rc=1; }
     component_php_verify       && log_ok "[70][verify] php OK"       || { log_err "[70][verify] php FAILED";       rc=1; }
-    component_nginx_verify     && log_ok "[70][verify] nginx OK"     || { log_err "[70][verify] nginx FAILED";     rc=1; }
+    case "${WP_HTTP_SERVER:-nginx}" in
+        apache|apache2|httpd)
+            component_apache_verify && log_ok "[70][verify] apache OK" || { log_err "[70][verify] apache FAILED"; rc=1; } ;;
+        *)
+            component_nginx_verify  && log_ok "[70][verify] nginx OK"  || { log_err "[70][verify] nginx FAILED";  rc=1; } ;;
+    esac
     component_wordpress_verify && log_ok "[70][verify] wordpress OK" || { log_err "[70][verify] wordpress FAILED"; rc=1; }
+    component_http_verify      && log_ok "[70][verify] http-loads OK" || { log_err "[70][verify] http-loads FAILED"; rc=1; }
+    if [ "${WP_FIREWALL:-0}" = "1" ]; then
+        component_firewall_verify && log_ok "[70][verify] firewall OK" || { log_err "[70][verify] firewall FAILED (port ${WP_SITE_PORT}/tcp not allowed in UFW)"; rc=1; }
+    fi
     if [ $rc -eq 0 ]; then
         log_ok "[70][verify] OK -- all components reachable"
         log_info "[70][verify] site: http://${WP_SERVER_NAME}:${WP_SITE_PORT}/"
@@ -250,7 +259,9 @@ _check_all() {
 
 _uninstall_all() {
     component_wordpress_uninstall
+    component_firewall_uninstall
     component_nginx_uninstall
+    component_apache_uninstall
     # Leave php + mysql in place by default (other apps may depend on them).
     # The operator can run `install uninstall mysql` / `install uninstall php`
     # explicitly to remove those packages too.
