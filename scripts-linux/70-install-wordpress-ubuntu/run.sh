@@ -545,6 +545,12 @@ case "$VERB" in
             component_wordpress_show_credentials || rc=$?
         fi
         ;;
+    reconfigure)
+        # Re-run wp-config.php generation (only) using current DB env values.
+        # No download / no extract / no chown of WordPress files. Backs up
+        # the existing wp-config.php to wp-config.php.bak.<UTC-ts> first.
+        component_wordpress_reconfigure || rc=$?
+        ;;
     repair)
         rm -f "$ROOT/.installed/70-mysql.ok" "$ROOT/.installed/70-php.ok" \
               "$ROOT/.installed/70-nginx.ok" "$ROOT/.installed/70-apache.ok" \
