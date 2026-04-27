@@ -476,6 +476,10 @@ _clean_vscode_desktop_entries() {
             log_info "[01]   no MimeType=/Actions= in: $path"
             rm -f "$tmp"; return 0
         fi
+        if ! _scope_can_modify; then
+            log_info "[01]   REPORT-ONLY -- would scrub .desktop entries from: $path"
+            rm -f "$tmp"; return 0
+        fi
         local ts backup
         ts=$(date +%Y%m%d-%H%M%S)
         backup="${path}.bak-01de-${ts}"
