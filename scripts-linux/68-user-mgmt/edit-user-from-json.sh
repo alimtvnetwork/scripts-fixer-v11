@@ -105,6 +105,36 @@ JSON examples (each record below would pass schema validation):
 
   // 4) REJECTED -- mutex violation (promote + demote both true)
   { "name": "eve", "promote": true, "demote": true }
+
+Dry-run effect per JSON field (with --dry-run, every record is validated
++ planned but no host mutation occurs. Each field maps to a single
+um_user_modify call which logs "[dry-run] <command>" with the resolved
+arguments. Schema validation -- including mutex checks -- ALWAYS runs.):
+  name          would resolve the account; missing user -> [FAIL] +
+                record marked failed; loader continues with the next row
+  rename        would call usermod -l (Linux) / dscl rename (macOS);
+                applied LAST so other ops still target the original name
+  password      would pipe '<name>:<masked>' to chpasswd / dscl -passwd;
+                value NEVER logged
+  passwordFile  same as password, but read from FILE; mode (0600/0400)
+                is checked before the plan runs
+  promote       would add to 'sudo' (Linux) / 'admin' (macOS)
+  demote        would remove from 'sudo' / 'admin'
+  addGroups     one usermod -aG / dseditgroup -a call per array entry
+  removeGroups  one gpasswd -d / dseditgroup -d call per array entry
+  shell         would call usermod -s PATH / dscl . -create UserShell
+  comment       would call usermod -c "..." / dscl . -create RealName;
+                empty string CLEARS the field
+  enable        would call usermod -U / passwd -u (Linux) /
+                pwpolicy -enableuser (macOS)
+  disable       would call usermod -L / passwd -l (Linux) /
+                pwpolicy -disableuser (macOS)
+
+Loader-level dry-run notes:
+  - Mutex violations (promote+demote, enable+disable) are rejected by the
+    validator BEFORE any record runs, so a half-applied batch is impossible.
+  - Records with zero applicable changes log "[WARN] no changes requested"
+    and are skipped; the loader still exits 0 if every other record was ok.
 EOF
 }
 
