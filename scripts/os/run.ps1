@@ -170,6 +170,8 @@ function Show-OsHelp {
     Write-Host "      --enable | --disable | --add-group G | --remove-group G | --comment T | --ask" -ForegroundColor DarkGray
     Write-Host "    remove-user <name> [--purge-profile] [--yes] [--ask]   Delete a local user" -ForegroundColor Green
     Write-Host "    add-user-json <file.json> [--dry-run]                  Bulk users from JSON" -ForegroundColor Green
+    Write-Host "    edit-user-json <file.json> [--dry-run]                 Bulk user edits from JSON" -ForegroundColor Green
+    Write-Host "    remove-user-json <file.json> [--dry-run]               Bulk user removals from JSON" -ForegroundColor Green
     Write-Host "    add-group <name> [--description T] [--ask] [--dry-run] Create a local group" -ForegroundColor Green
     Write-Host "    add-group-json <file.json> [--dry-run]                 Bulk groups from JSON" -ForegroundColor Green
     Write-Host ""
@@ -360,6 +362,14 @@ switch ($normalizedAction) {
     }
     { $_ -in @("add-user-json", "adduserjson", "add-users-json", "user-json") } {
         & (Join-Path $scriptDir "helpers\add-user-from-json.ps1") @Rest
+        exit $LASTEXITCODE
+    }
+    { $_ -in @("edit-user-json", "edituserjson", "edit-users-json", "modify-user-json") } {
+        & (Join-Path $scriptDir "helpers\edit-user-from-json.ps1") @Rest
+        exit $LASTEXITCODE
+    }
+    { $_ -in @("remove-user-json", "removeuserjson", "remove-users-json", "delete-user-json") } {
+        & (Join-Path $scriptDir "helpers\remove-user-from-json.ps1") @Rest
         exit $LASTEXITCODE
     }
     { $_ -in @("add-group", "addgroup", "new-group") } {
