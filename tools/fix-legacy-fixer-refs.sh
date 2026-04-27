@@ -43,6 +43,23 @@ info "repo:     $REPO_ROOT"
 info "rewrite:  $(for v in $FIX_VERSIONS; do printf 'scripts-fixer-v%s ' "$v"; done)-> scripts-fixer-$FIX_TARGET"
 if [ "$DRY_RUN" = "1" ]; then info "mode:     dry-run"; else info "mode:     apply"; fi
 
+# Resolve backup directory (only used when BACKUP=1 AND not DRY_RUN)
+case "$BACKUP_ROOT" in
+  /*) backup_base="$BACKUP_ROOT" ;;
+  *)  backup_base="$REPO_ROOT/$BACKUP_ROOT" ;;
+esac
+backup_dir="$backup_base/$BACKUP_STAMP"
+backup_active=0
+if [ "$BACKUP" = "1" ] && [ "$DRY_RUN" != "1" ]; then
+  if mkdir -p "$backup_dir" 2>/dev/null; then
+    backup_active=1
+    info "backup:   $backup_dir"
+  else
+    file_error "$backup_dir" "cannot create backup directory -- aborting"
+    exit 2
+  fi
+fi
+
 # Build a single regex alternation: scripts-fixer-v(8|9|10)
 alt="$(echo "$FIX_VERSIONS" | tr ' ' '|')"
 match_re="scripts-fixer-v(${alt})"
