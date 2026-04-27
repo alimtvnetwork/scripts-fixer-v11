@@ -101,7 +101,7 @@ a per-version summary) · `2` error (logs exact path + reason).
 **Single command** that runs the full migration safety net in one shot:
 
 1. Dry-run the fixer to **preview** every file that would change (no writes).
-2. Apply the rewrite (`scripts-fixer-v11/v9/v10` -> `scripts-fixer-v11`) and
+2. Apply the rewrite (`scripts-fixer-v8/v9/v10` -> `scripts-fixer-v11`) and
    write the JSON summary to `legacy-fix-report.json`.
 3. Run the scanner. The whole command **only exits 0 when the scanner
    reports PASS**, so a green exit guarantees the repo is clean.
