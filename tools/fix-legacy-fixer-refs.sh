@@ -158,6 +158,12 @@ if [ -n "$REPORT_FILE" ]; then
       printf '  "mode": "%s",\n' "$mode_str"
       printf '  "target": "scripts-fixer-%s",\n' "$FIX_TARGET"
       printf '  "legacyVersions": %s,\n' "$versions_json"
+      backup_json="null"
+      if [ "$backup_active" = "1" ]; then
+        esc_bdir="$(printf '%s' "$backup_dir" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+        backup_json="\"$esc_bdir\""
+      fi
+      printf '  "backupDir": %s,\n' "$backup_json"
       printf '  "totals": { "filesChanged": %d, "totalReplacements": %d, "errors": %d },\n' \
              "$changed_files" "$total_replacements" "$errors"
       printf '  "files": ['
