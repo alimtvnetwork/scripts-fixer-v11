@@ -231,19 +231,23 @@ _clean_mime_defaults() {
         return 0
     fi
 
-    # Read allow-list into arrays. ${HOME} expansion is done here so the
-    # config file stays portable across users.
-    mapfile -t DESKTOPS  < <(jq -r '.mimeCleanup.desktopFiles[]' "$CONFIG")
-    mapfile -t USR_FILES < <(jq -r '.mimeCleanup.userFiles[]'    "$CONFIG")
-    mapfile -t SYS_FILES < <(jq -r '.mimeCleanup.systemFiles[]'  "$CONFIG")
-    mapfile -t CACHES    < <(jq -r '.mimeCleanup.cacheFiles[]'   "$CONFIG")
+    # Scope-filtered allow-lists. desktopFiles + systemFiles carry per-method
+    # tags; userFiles + cacheFiles are shared across all methods.
+    mapfile -t DESKTOPS  < <(_scoped_filter '.mimeCleanup.desktopFiles' name)
+    mapfile -t USR_FILES < <(jq -r '.mimeCleanup.userFiles[]'  "$CONFIG")
+    mapfile -t SYS_FILES < <(_scoped_filter '.mimeCleanup.systemFiles' path)
+    mapfile -t CACHES    < <(jq -r '.mimeCleanup.cacheFiles[]' "$CONFIG")
 
     if [ "${#DESKTOPS[@]}" -eq 0 ]; then
-        log_warn "[01] mimeCleanup.desktopFiles is empty -- nothing to scrub"
+        log_warn "[01] No desktopFiles match active scope (methods='$SCOPE_METHODS' editions='$SCOPE_EDITIONS') -- skipping MIME defaults scrub"
         return 0
     fi
 
-    log_info "[01] Scrubbing MIME defaults for: ${DESKTOPS[*]}"
+    if _scope_can_modify; then
+        log_info "[01] Scrubbing MIME defaults for (scope: $SCOPE_SOURCE/${SCOPE_METHODS}/${SCOPE_EDITIONS}): ${DESKTOPS[*]}"
+    else
+        log_info "[01] REPORT-ONLY -- would scrub MIME defaults for: ${DESKTOPS[*]}"
+    fi
 
     # Build a single sed -e chain that:
     #   1. Drops any "<mime>=<desktop>" line where <desktop> matches the
