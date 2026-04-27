@@ -724,6 +724,15 @@ if [ "$UM_SSH_REQUESTED_COUNT" -gt 0 ]; then
               fi
               log_info "  key fingerprint: $fp"
             done <<< "$_ssh_buf"
+
+            # Persist rollback manifest. Only the keys that were actually
+            # appended this run get tracked -- pre-existing keys are
+            # untouched on rollback. We pass the FULL dedup buffer as a
+            # safety net, then filter inside the manifest writer if we
+            # ever need to (current impl tracks them all, since the
+            # operator can still spot pre-existing keys via fingerprint
+            # in the manifest list output).
+            _um_write_manifest "$UM_NAME" "$_ssh_file" "$_ssh_buf" "$added"
           fi
         fi
       fi
