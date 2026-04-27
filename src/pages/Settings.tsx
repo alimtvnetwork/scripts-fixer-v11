@@ -142,8 +142,9 @@ const Settings = () => {
           </Link>
           <h1 className="text-3xl font-bold tracking-tight">Script 52 settings</h1>
           <p className="text-sm text-muted-foreground">
-            Configure VS Code folder context-menu repair, then download a merged{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">config.json</code>.
+            Configure VS Code folder context-menu repair, then save directly to{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">{CONFIG_PATH}</code>{" "}
+            via the local bridge (or download the JSON).
           </p>
         </header>
 
