@@ -37,6 +37,29 @@ Options:
   --ask                        prompt for passphrase interactively
   --force                      overwrite an existing private key
   --dry-run                    print what would happen, change nothing
+
+Dry-run effect per flag (with --dry-run, ssh-keygen is NOT invoked and
+no files are written; the planned command is logged as "[dry-run]
+ssh-keygen ..." with the resolved arguments):
+  --type ed25519|rsa|ecdsa     would pass -t <type> to ssh-keygen
+  --bits N                     would pass -b N (rsa/ecdsa only); ignored
+                               for ed25519 with no log line
+  --out PATH                   would pass -f PATH; parent dir is checked
+                               for writability but NOT created
+  --comment "..."              would pass -C "..." (defaults to <user>@<host>)
+  --passphrase PW              would pass -N <masked> to ssh-keygen; the
+                               value is NEVER logged
+  --no-passphrase              would pass -N "" (empty passphrase)
+  --ask                        prompts BEFORE the dry-run banner; the
+                               collected passphrase still drives the
+                               masked log line
+  --force                      no dry-run effect on its own; in real-run
+                               it would 'rm <out> <out>.pub' before
+                               ssh-keygen runs (logged as such in dry-run
+                               only if the key exists today)
+  --dry-run                    this flag itself; emits the dry-run banner,
+                               skips the ssh-keygen-binary check, and
+                               gates every rm/ssh-keygen call
 EOF
 }
 
