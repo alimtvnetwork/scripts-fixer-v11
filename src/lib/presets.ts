@@ -89,7 +89,7 @@ export async function updatePreset(input: {
   label?: string;
   options?: Script52Options;
 }): Promise<ConfigPreset> {
-  const patch: Record<string, unknown> = {};
+  const patch: { label?: string; options?: Script52Options } = {};
   if (input.label !== undefined) patch.label = presetLabelSchema.parse(input.label);
   if (input.options !== undefined) patch.options = script52OptionsSchema.parse(input.options);
   const { data, error } = await supabase
