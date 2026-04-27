@@ -89,6 +89,23 @@ while IFS= read -r -d '' f; do
   [ -z "$count" ] || [ "$count" = "0" ] && continue
 
   if [ "$DRY_RUN" != "1" ]; then
+    # Timestamped backup BEFORE we touch the file. Backup failure is fatal
+    # for that file (we never want a half-backed rollback set).
+    if [ "$backup_active" = "1" ]; then
+      bdest="$backup_dir/$rel"
+      bdir="$(dirname "$bdest")"
+      if ! mkdir -p "$bdir" 2>/dev/null; then
+        file_error "$bdir" "cannot create backup subdir"
+        errors=$((errors+1))
+        continue
+      fi
+      if ! cp -p "$f" "$bdest" 2>/dev/null; then
+        file_error "$bdest" "backup copy failed (source: $f)"
+        errors=$((errors+1))
+        continue
+      fi
+    fi
+
     tmp="${f}.fixlegacy.$$"
     if ! sed -E "s/scripts-fixer-v(${alt})\b/scripts-fixer-${FIX_TARGET}/g" "$f" > "$tmp" 2>/dev/null; then
       file_error "$f" "sed rewrite failed"
