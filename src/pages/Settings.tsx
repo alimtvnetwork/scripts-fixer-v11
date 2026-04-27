@@ -548,10 +548,10 @@ const Settings = () => {
               </ul>
             )}
           </CardContent>
-        </Card>
-
-
-          <Button variant="secondary" onClick={handleDownload}>
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button variant="outline" asChild>
+            <Link to="/">Cancel</Link>
+          </Button>
             Download config.json
           </Button>
           <Button
