@@ -21,8 +21,13 @@
 #   --port <n>            MySQL port (default: 3306)
 #   --datadir <path>      MySQL data directory (default: /var/lib/mysql)
 #   --path <path>         WordPress install path (default: /var/www/wordpress)
+#                         (also used as nginx/apache document root)
+#   --docroot <path>      Alias of --path (document root for the vhost)
 #   --site-port <n>       nginx HTTP port (default: 80)
-#   --server-name <name>  nginx server_name (default: localhost)
+#   --server-name <name>  vhost server_name -- your domain (default: localhost)
+#                         Examples: example.com, "example.com www.example.com",
+#                         blog.example.com. Use a space-separated list to
+#                         serve multiple hostnames from the same vhost.
 #   --db-name <name>      WordPress DB name (default: wordpress)
 #   --db-user <name>      WordPress DB user (default: wp_user)
 #   --db-pass <pw>        WordPress DB password (default: auto-generate)
@@ -90,8 +95,10 @@ while [ $# -gt 0 ]; do
         --port)            WP_MYSQL_PORT="$2"; shift 2 ;;
         --datadir)         WP_MYSQL_DATADIR="$2"; shift 2 ;;
         --path)            WP_INSTALL_PATH="$2"; shift 2 ;;
+        --docroot)         WP_INSTALL_PATH="$2"; shift 2 ;;
         --site-port)       WP_SITE_PORT="$2"; shift 2 ;;
-        --server-name)     WP_SERVER_NAME="$2"; shift 2 ;;
+        --server-name|--domain)
+                           WP_SERVER_NAME="$2"; shift 2 ;;
         --db-name)         WP_DB_NAME="$2"; shift 2 ;;
         --db-user)         WP_DB_USER="$2"; shift 2 ;;
         --db-pass)         WP_DB_PASS="$2"; shift 2 ;;
