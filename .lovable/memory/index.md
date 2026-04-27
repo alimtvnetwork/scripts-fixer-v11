@@ -28,3 +28,4 @@ STRICTLY-PROHIBITED (SP-1..SP-6): NEVER write or suggest date/time/timestamp con
 - [Change-port + DNS toolkit](mem://features/19-change-port-and-dns) — root-level change-port.sh / install-dns.sh dispatchers (v0.175.0)
 
 - [Script 68 shared schema validator](mem://features/script-68-shared-schema) — helpers/_schema.sh deduplicates strict JSON validation across all four *-from-json.sh leaves
+- [Windows user-mgmt shared helpers](mem://features/windows-user-mgmt-shared-helpers) — Invoke-UserModify/Delete/PurgeHome in scripts/os/helpers/_common.ps1; used by edit-user, remove-user, edit-user-from-json, remove-user-from-json
