@@ -24,6 +24,11 @@
 # Flags:
 #   --interactive | -i    prompt for port / data dir / php version /
 #                         install path / site port / db name|user|pass
+#   --keep-salts          (reconfigure only) preserve existing salts in
+#                         wp-config.php instead of rotating them. Use this
+#                         when you only need to update DB credentials and
+#                         do NOT want to invalidate active user sessions
+#                         and password-reset cookies.
 #   --apt-refresh <mode>  refresh APT before installing MySQL + PHP-FPM in the
 #                         prereqs stage. Modes:
 #                           none           -- skip (default)
@@ -143,6 +148,12 @@ export WP_HTTPS_WILDCARD="0"    # 1 = request *.<apex> + apex (forces DNS-01)
 export WP_SHOW_CREDENTIALS="0"  # 1 = print credentials block after install
 SHOW_CREDS_JSON="0"             # 1 = show-credentials verb emits raw JSON
 
+# ---- reconfigure knobs -----------------------------------------------------
+# WP_KEEP_SALTS=1 (set by --keep-salts) tells the reconfigure path to
+# preserve the 8 salt define() lines from the existing wp-config.php so
+# active sessions remain valid. Default 0 = always rotate salts.
+export WP_KEEP_SALTS="0"
+
 # ---- prereqs.apt_refresh default (config.json overrides hardcoded "none") ---
 # Not exported here -- _resolve_apt_refresh_default does the JSON read after
 # arg parsing so an explicit --apt-refresh on the CLI always wins.
@@ -163,9 +174,12 @@ while [ $# -gt 0 ]; do
                     SUBCOMPONENT="$1"; shift ;;
             esac
             ;;
+        reconfigure|reconfig|rewrite-config)
+            VERB="reconfigure"; shift ;;
         show-credentials|show-creds|creds)
             VERB="show-credentials"; shift ;;
         -i|--interactive)  INTERACTIVE=1; shift ;;
+        --keep-salts)      WP_KEEP_SALTS=1; shift ;;
         --apt-refresh)     WP_APT_REFRESH="$2"; shift 2 ;;
         --apt-refresh=*)   WP_APT_REFRESH="${1#--apt-refresh=}"; shift ;;
         --apt-update)      WP_APT_REFRESH="update";  shift ;;
