@@ -734,6 +734,25 @@ verb_check() {
   log_warn "[01] code not on PATH"; return 1
 }
 
+# Show the resolved install scope (method + edition + source) without
+# touching anything. Useful for ops to dry-run the cleanup decision.
+verb_scope() {
+    _resolve_install_scope
+    log_info "[01][scope] source:   $SCOPE_SOURCE"
+    log_info "[01][scope] methods:  ${SCOPE_METHODS:-<none>}"
+    log_info "[01][scope] editions: ${SCOPE_EDITIONS:-<none>}"
+    if [ -f "$FINGERPRINT_FILE" ]; then
+        log_info "[01][scope] fingerprint:"
+        cat "$FINGERPRINT_FILE" | sed 's/^/    /' >&2
+    else
+        log_info "[01][scope] fingerprint: <missing -- $FINGERPRINT_FILE>"
+    fi
+    if ! _scope_can_modify; then
+        log_warn "[01][scope] empty scope -> cleanup would run in REPORT-ONLY mode"
+    fi
+    return 0
+}
+
 verb_repair() { rm -f "$INSTALLED_MARK"; verb_install; }
 
 verb_uninstall() {
