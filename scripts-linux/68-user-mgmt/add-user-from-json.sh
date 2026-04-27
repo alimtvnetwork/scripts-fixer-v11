@@ -247,6 +247,21 @@ fi
 export UM_RUN_ID UM_NO_MANIFEST
 [ -n "$UM_MANIFEST_DIR" ] && export UM_MANIFEST_DIR
 
+# v0.182.0 -- batch summary JSON plumbing.
+# When the operator asks for a batch summary, force every child into
+# "auto" so we can find their per-user summary files later and aggregate
+# them into one rollup. This keeps both the per-user docs (canonical
+# audit trail) AND a single rollup the operator can grep on.
+# UM_BATCH_SUMMARY_TARGET preserves the operator's original choice
+# (auto / stdout / explicit path) for the rollup itself.
+UM_BATCH_SUMMARY_TARGET="$UM_SUMMARY_JSON"
+if [ -n "$UM_SUMMARY_JSON" ]; then
+    if [ "$UM_NO_MANIFEST" = "1" ]; then
+        log_warn "--summary-json with --no-manifest: per-user summaries fall back to stdout (run-id is required for the auto path); batch rollup will be best-effort"
+    fi
+    export UM_SUMMARY_JSON="auto"
+fi
+
 # Set up a per-batch summary file so we can print a single roll-up.
 UM_SUMMARY_FILE="${UM_SUMMARY_FILE:-$(mktemp -t 68-summary.XXXXXX)}"
 export UM_SUMMARY_FILE
