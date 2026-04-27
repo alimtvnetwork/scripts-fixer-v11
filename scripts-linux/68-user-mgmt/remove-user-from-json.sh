@@ -86,6 +86,29 @@ JSON examples (each record below would pass schema validation):
 
   // 4) bare-string shorthand (auto-promoted to { "name": ... })
   [ "alice", "bob", "carol" ]
+
+Dry-run effect per JSON field (with --dry-run, every record is validated
++ planned but no host mutation occurs. Each field maps to a single
+um_user_delete / um_purge_home call which logs "[dry-run] <command>"
+with the resolved arguments. Confirmation prompts are auto-bypassed
+(this loader is non-interactive by design).):
+  name             would resolve account + home dir, then call userdel
+                   (Linux) / sysadminctl -deleteUser (macOS). Absent
+                   account -> [WARN] "nothing to remove" and the record
+                   exits 0 (idempotent); no mutation either way.
+  purgeHome        would 'rm -rf <home>' AFTER account delete (or, on
+                   Linux, fold into 'userdel -r' atomically). DESTRUCTIVE
+                   in real-run; in dry-run only the rm command is logged.
+  purgeProfile     same as purgeHome (alias only); same dry-run line.
+  removeMailSpool  Linux only: would pass -r to userdel so /var/mail/<name>
+                   is deleted in the same atomic call. macOS: ignored.
+
+Loader-level dry-run notes:
+  - The bare-string shorthand is normalised to { "name": ... } before
+    the dry-run banner is printed, so the planned list matches a
+    subsequent real run exactly.
+  - Records with a missing user produce a [WARN] but the loader still
+    exits 0 if every other record was ok.
 EOF
 }
 
