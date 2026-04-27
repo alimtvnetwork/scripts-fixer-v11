@@ -63,10 +63,23 @@ component_apache_install() {
 
     local vhost="/etc/apache2/sites-available/wordpress.conf"
     log_info "[70][apache] writing vhost -> $vhost"
+
+    # Apache requires `ServerName <one host>` + `ServerAlias <rest>`.
+    # Split WP_SERVER_NAME on whitespace so multi-host setups work the same
+    # as nginx's space-separated server_name.
+    # shellcheck disable=SC2206  # intentional word-splitting for host list
+    local hosts=( $server_name )
+    local primary="${hosts[0]:-localhost}"
+    local aliases=""
+    if [ "${#hosts[@]}" -gt 1 ]; then
+        aliases="    ServerAlias ${hosts[*]:1}"
+    fi
+
     if ! sudo tee "$vhost" >/dev/null <<EOF
 # Written by 70-install-wordpress-ubuntu (do not edit by hand)
 <VirtualHost *:${port}>
-    ServerName ${server_name}
+    ServerName ${primary}
+${aliases}
     DocumentRoot ${install_path}
     DirectoryIndex index.php index.html
 
