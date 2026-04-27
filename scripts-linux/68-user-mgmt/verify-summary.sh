@@ -1005,6 +1005,26 @@ if [ "$VS_RESULTS_JSON" = "1" ]; then
   if [ "${#VS_RESULTS_NDJSON[@]}" -gt 0 ]; then
     _vs_results_arr=$(printf '%s\n' "${VS_RESULTS_NDJSON[@]}" | jq -s '.')
   fi
+  # Build the rules block (enabled + disabled opt-in names, plus builtins).
+  _vs_rules_enabled_arr="[]"
+  _vs_rules_disabled_arr="[]"
+  _vs_rules_builtin_arr="[]"
+  _vs_enabled_lines=""
+  _vs_disabled_lines=""
+  for _r in "${VS_RULE_CATALOG[@]}"; do
+    if [ -n "${VS_RULES_ENABLED[$_r]:-}" ]; then
+      _vs_enabled_lines+="$_r"$'\n'
+    else
+      _vs_disabled_lines+="$_r"$'\n'
+    fi
+  done
+  if [ -n "$_vs_enabled_lines" ]; then
+    _vs_rules_enabled_arr=$(printf '%s' "$_vs_enabled_lines" | jq -R . | jq -s '[.[]|select(.!="")]')
+  fi
+  if [ -n "$_vs_disabled_lines" ]; then
+    _vs_rules_disabled_arr=$(printf '%s' "$_vs_disabled_lines" | jq -R . | jq -s '[.[]|select(.!="")]')
+  fi
+  _vs_rules_builtin_arr=$(printf '%s\n' "${VS_RULE_BUILTIN[@]}" | jq -R . | jq -s '[.[]|select(.!="")]')
   _vs_report=$(jq -n \
     --argjson c "$VS_TOTAL" --argjson p "$VS_PASS" \
     --argjson f "$VS_FAIL"  --argjson w "$VS_WARN" \
@@ -1018,6 +1038,9 @@ if [ "$VS_RESULTS_JSON" = "1" ]; then
     --arg     sinceSource  "${VS_SINCE_SOURCE:-}" \
     --argjson sinceSkipped "${VS_SINCE_SKIPPED:-0}" \
     --argjson results "$_vs_results_arr" \
+    --argjson rulesOn  "$_vs_rules_enabled_arr" \
+    --argjson rulesOff "$_vs_rules_disabled_arr" \
+    --argjson rulesBuiltin "$_vs_rules_builtin_arr" \
     '{
         reportVersion: 1,
         tool: "verify-summary",
@@ -1033,6 +1056,7 @@ if [ "$VS_RESULTS_JSON" = "1" ]; then
                      source: $sinceSource,
                      skipped: $sinceSkipped }
                  end ),
+        rules: { enabled: $rulesOn, disabled: $rulesOff, builtin: $rulesBuiltin },
         results: $results
      }')
 
