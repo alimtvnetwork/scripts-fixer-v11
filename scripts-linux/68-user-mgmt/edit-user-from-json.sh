@@ -32,6 +32,11 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/helpers/_common.sh"
 
+# As of v0.203.0 this loader applies each record IN-PROCESS via the shared
+# um_user_modify helper rather than forking `bash edit-user.sh` per row.
+# This drops ~50ms of bash startup per record and gives every record access
+# to the same UM_SUMMARY_FILE without env-passing gymnastics.
+
 # Allowed top-level fields per record. Anything outside this set triggers
 # a "schemaUnknownField" warning (typo guard) but does NOT reject the
 # record on its own.
@@ -182,6 +187,106 @@ rm -f /tmp/68-jq-err.$$
 count=$(jq 'length' <<< "$normalised")
 log_info "loaded $count user-edit record(s) from '$UM_FILE'"
 
+# In-process applicator. Mirrors the orchestration that edit-user.sh does
+# for a single record: plan banner, existence probe, password resolution,
+# then a sequence of um_user_modify calls (rename last). Returns 0/1.
+_apply_edit_record() {
+  local name="$1" rec="$2"
+  local rename pw pwfile shell_v has_comment comment
+  local is_promote is_demote is_enable is_disable
+  local sudo_group rc=0
+
+  rename=$(jq -r       '.rename // empty'       <<< "$rec")
+  pw=$(jq -r           '.password // empty'     <<< "$rec")
+  pwfile=$(jq -r       '.passwordFile // empty' <<< "$rec")
+  shell_v=$(jq -r      '.shell // empty'        <<< "$rec")
+  has_comment=$(jq -r  'if has("comment") then "1" else "" end' <<< "$rec")
+  comment=$(jq -r      '.comment // ""'         <<< "$rec")
+  is_promote=$(jq -r   'if .promote == true then "1" else "" end' <<< "$rec")
+  is_demote=$(jq -r    'if .demote  == true then "1" else "" end' <<< "$rec")
+  is_enable=$(jq -r    'if .enable  == true then "1" else "" end' <<< "$rec")
+  is_disable=$(jq -r   'if .disable == true then "1" else "" end' <<< "$rec")
+
+  if [ "$UM_OS" = "macos" ]; then sudo_group="admin"; else sudo_group="sudo"; fi
+
+  # Build add/remove group lists (comma-joined for the plan banner).
+  local add_groups="" rm_groups=""
+  if jq -e 'has("addGroups")' <<< "$rec" >/dev/null 2>&1; then
+    add_groups=$(jq -r '.addGroups | join(",")' <<< "$rec")
+  fi
+  if jq -e 'has("removeGroups")' <<< "$rec" >/dev/null 2>&1; then
+    rm_groups=$(jq -r '.removeGroups | join(",")' <<< "$rec")
+  fi
+  [ "$is_promote" = "1" ] && add_groups="${add_groups:+$add_groups,}$sudo_group"
+  [ "$is_demote"  = "1" ] && rm_groups="${rm_groups:+$rm_groups,}$sudo_group"
+
+  # Plan banner (matches edit-user.sh wording exactly).
+  local plan=()
+  [ -n "$rename" ]       && plan+=("rename '$name' -> '$rename'")
+  { [ -n "$pw" ] || [ -n "$pwfile" ]; } && plan+=("reset password")
+  [ "$is_promote" = "1" ] && plan+=("promote (add to '$sudo_group')")
+  [ "$is_demote"  = "1" ] && plan+=("demote (remove from '$sudo_group')")
+  [ -n "$add_groups" ]    && plan+=("add groups: $add_groups")
+  [ -n "$rm_groups" ]     && plan+=("remove groups: $rm_groups")
+  [ -n "$shell_v" ]       && plan+=("set shell: $shell_v")
+  [ "$has_comment" = "1" ] && plan+=("set comment: '$comment'")
+  [ "$is_enable"  = "1" ] && plan+=("enable account")
+  [ "$is_disable" = "1" ] && plan+=("disable account")
+
+  if [ "${#plan[@]}" -eq 0 ]; then
+    log_warn "no changes requested for '$name' -- skipping (record has only 'name')"
+    return 0
+  fi
+
+  log_info "$(um_msg editPlanHeader "$name" 2>/dev/null || echo "edit-user plan for '$name':")"
+  for p in "${plan[@]}"; do log_info "  - $p"; done
+
+  if ! um_user_exists "$name"; then
+    log_err "$(um_msg editUserMissing "$name" 2>/dev/null || echo "user '$name' does not exist -- nothing to edit (failure: create it first with add-user)")"
+    um_summary_add "fail" "user" "$name" "missing"
+    return 1
+  fi
+
+  # Resolve password (file or plain). Empty -> no password change.
+  local resolved_pw=""
+  if [ -n "$pw" ] || [ -n "$pwfile" ]; then
+    UM_PASSWORD="$pw" UM_PASSWORD_FILE="$pwfile" UM_PASSWORD_CLI="" \
+      um_resolve_password || return $?
+    resolved_pw="$UM_RESOLVED_PASSWORD"
+  fi
+
+  [ -n "$resolved_pw" ]     && { um_user_modify "$name" password "$resolved_pw" || rc=1; }
+  [ -n "$shell_v" ]         && { um_user_modify "$name" shell    "$shell_v"     || rc=1; }
+  [ "$has_comment" = "1" ]  && { um_user_modify "$name" comment  "$comment"     || rc=1; }
+  [ "$is_enable"  = "1" ]   && { um_user_modify "$name" enable                  || rc=1; }
+  [ "$is_disable" = "1" ]   && { um_user_modify "$name" disable                 || rc=1; }
+
+  if [ -n "$add_groups" ]; then
+    IFS=',' read -ra _ag <<< "$add_groups"
+    for g in "${_ag[@]}"; do
+      g="${g// /}"; [ -z "$g" ] && continue
+      um_user_modify "$name" add-group "$g" || rc=1
+    done
+  fi
+  if [ -n "$rm_groups" ]; then
+    IFS=',' read -ra _rg <<< "$rm_groups"
+    for g in "${_rg[@]}"; do
+      g="${g// /}"; [ -z "$g" ] && continue
+      um_user_modify "$name" rm-group "$g" || rc=1
+    done
+  fi
+
+  # Rename LAST so all prior ops referenced the original name.
+  [ -n "$rename" ] && { um_user_modify "$name" rename "$rename" || rc=1; }
+
+  if [ "$rc" -eq 0 ]; then
+    um_summary_add "ok"   "edit-user" "$name" "${#plan[@]} change(s) applied"
+  else
+    um_summary_add "fail" "edit-user" "$name" "one or more changes failed"
+  fi
+  return $rc
+}
+
 rc_total=0
 i=0
 while [ "$i" -lt "$count" ]; do
@@ -217,48 +322,8 @@ while [ "$i" -lt "$count" ]; do
     i=$((i+1)); continue
   fi
 
-  # ---- Build edit-user.sh argv ----
-  rename=$(jq -r       '.rename // empty'       <<< "$rec")
-  pw=$(jq -r           '.password // empty'     <<< "$rec")
-  pwfile=$(jq -r       '.passwordFile // empty' <<< "$rec")
-  shell_v=$(jq -r      '.shell // empty'        <<< "$rec")
-  has_comment=$(jq -r  'if has("comment") then "1" else "" end' <<< "$rec")
-  comment=$(jq -r      '.comment // ""'         <<< "$rec")
-  is_promote=$(jq -r   'if .promote == true then "1" else "" end' <<< "$rec")
-  is_demote=$(jq -r    'if .demote  == true then "1" else "" end' <<< "$rec")
-  is_enable=$(jq -r    'if .enable  == true then "1" else "" end' <<< "$rec")
-  is_disable=$(jq -r   'if .disable == true then "1" else "" end' <<< "$rec")
-
-  args=("$name")
-  [ -n "$rename" ]    && args+=(--rename "$rename")
-  [ -n "$pw" ]        && args+=(--reset-password "$pw")
-  [ -n "$pwfile" ]    && args+=(--password-file "$pwfile")
-  [ "$is_promote" = "1" ] && args+=(--promote)
-  [ "$is_demote"  = "1" ] && args+=(--demote)
-  [ -n "$shell_v" ]   && args+=(--shell "$shell_v")
-  [ "$has_comment" = "1" ] && args+=(--comment "$comment")
-  [ "$is_enable"  = "1" ] && args+=(--enable)
-  [ "$is_disable" = "1" ] && args+=(--disable)
-  [ "$UM_DRY_RUN" = "1" ] && args+=(--dry-run)
-
-  # addGroups / removeGroups arrays -> one --add-group / --remove-group flag each.
-  if jq -e 'has("addGroups")' <<< "$rec" >/dev/null 2>&1; then
-    n=$(jq '.addGroups | length' <<< "$rec"); j=0
-    while [ "$j" -lt "$n" ]; do
-      g=$(jq -r ".addGroups[$j]" <<< "$rec"); args+=(--add-group "$g"); j=$((j+1))
-    done
-  fi
-  if jq -e 'has("removeGroups")' <<< "$rec" >/dev/null 2>&1; then
-    n=$(jq '.removeGroups | length' <<< "$rec"); j=0
-    while [ "$j" -lt "$n" ]; do
-      g=$(jq -r ".removeGroups[$j]" <<< "$rec"); args+=(--remove-group "$g"); j=$((j+1))
-    done
-  fi
-
   log_info "--- record $((i+1))/$count: edit user='$name' ---"
-  if ! bash "$SCRIPT_DIR/edit-user.sh" "${args[@]}"; then
-    rc_total=1
-  fi
+  _apply_edit_record "$name" "$rec" || rc_total=1
   i=$((i+1))
 done
 
