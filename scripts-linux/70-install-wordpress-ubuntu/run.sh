@@ -292,7 +292,8 @@ case "$VERB" in
         ;;
     repair)
         rm -f "$ROOT/.installed/70-mysql.ok" "$ROOT/.installed/70-php.ok" \
-              "$ROOT/.installed/70-nginx.ok" "$ROOT/.installed/70-wordpress.ok"
+              "$ROOT/.installed/70-nginx.ok" "$ROOT/.installed/70-apache.ok" \
+              "$ROOT/.installed/70-wordpress.ok"
         _install_all || rc=$?
         ;;
     uninstall)
@@ -301,6 +302,8 @@ case "$VERB" in
                 mysql)     component_mysql_uninstall     ;;
                 php)       component_php_uninstall       ;;
                 nginx)     component_nginx_uninstall     ;;
+                apache)    component_apache_uninstall    ;;
+                firewall)  component_firewall_uninstall  ;;
                 wordpress|wp|wp-only) component_wordpress_uninstall ;;
             esac
         else
