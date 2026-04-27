@@ -170,6 +170,8 @@ function Show-OsHelp {
     Write-Host "      --enable | --disable | --add-group G | --remove-group G | --comment T | --ask" -ForegroundColor DarkGray
     Write-Host "    remove-user <name> [--purge-profile] [--yes] [--ask]   Delete a local user" -ForegroundColor Green
     Write-Host "    add-user-json <file.json> [--dry-run]                  Bulk users from JSON" -ForegroundColor Green
+    Write-Host "    add-group <name> [--description T] [--ask] [--dry-run] Create a local group" -ForegroundColor Green
+    Write-Host "    add-group-json <file.json> [--dry-run]                 Bulk groups from JSON" -ForegroundColor Green
     Write-Host ""
     Write-Host "  STARTUP MANAGEMENT (cross-OS feature, Windows side)" -ForegroundColor Cyan
     Write-Host "    startup-add app <path> [--method M] [--name N] [--args ...] [--interactive] [--elevated]" -ForegroundColor Green
