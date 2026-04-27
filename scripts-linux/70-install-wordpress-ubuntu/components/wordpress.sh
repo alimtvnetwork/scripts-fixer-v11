@@ -306,7 +306,7 @@ _emit_findings_and_return() {
     local n_err=0 n_warn=0 n_info=0
     local rec sev rest
     for rec in "${items[@]}"; do
-        sev="${rec%%$'\t'*}"
+        sev="${rec%%$'\x1f'*}"
         case "$sev" in
             error) n_err=$((n_err+1)) ;;
             warn)  n_warn=$((n_warn+1)) ;;
@@ -334,8 +334,8 @@ _emit_findings_and_return() {
         printf '  "findings": ['
         local first=1 i
         for rec in "${items[@]}"; do
-            # severity\tcheck\tpath\tmsg\texpected\tactual\tfix
-            IFS=$'\t' read -r f_sev f_chk f_path f_msg f_exp f_act f_fix <<<"$rec"
+            # severity\x1fcheck\x1fpath\x1fmsg\x1fexpected\x1factual\x1ffix
+            IFS=$'\x1f' read -r f_sev f_chk f_path f_msg f_exp f_act f_fix <<<"$rec"
             if [ "$first" = "1" ]; then printf '\n'; first=0; else printf ',\n'; fi
             printf '    { "severity": "%s", "check": "%s", "path": "%s", "message": "%s", "expected": "%s", "actual": "%s", "fix": "%s" }' \
                    "$(_json_escape "$f_sev")" \
