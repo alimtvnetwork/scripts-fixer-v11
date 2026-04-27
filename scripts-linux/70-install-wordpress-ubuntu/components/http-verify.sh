@@ -23,6 +23,9 @@ component_http_verify() {
               --connect-timeout 5 --max-time 15 \
               -H 'Host: '"${server_name}" \
               "$url" 2>/dev/null || echo "000")"
+    # curl may emit several concatenated http_code values on retry/redirect
+    # ('000000...'); keep only the final 3-digit chunk for clean logs.
+    code="${code: -3}"
 
     case "$code" in
         2*|3*) : ;;
