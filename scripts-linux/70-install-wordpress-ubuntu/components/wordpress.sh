@@ -636,14 +636,51 @@ component_wordpress_reconfigure() {
 
     # Backup current wp-config.php before overwrite.
     local cfg="$install_path/wp-config.php"
+    local bak=""
     if [ -f "$cfg" ]; then
         local ts; ts="$(date -u +%Y%m%dT%H%M%SZ)"
-        local bak="$cfg.bak.$ts"
+        bak="$cfg.bak.$ts"
         if sudo cp -p "$cfg" "$bak"; then
             log_ok "[70][wp][reconfigure] backed up existing wp-config.php -> $bak"
         else
             log_file_error "$bak" "cp backup failed -- aborting reconfigure to avoid losing original (source: $cfg)"
             return 1
+        fi
+
+        # Snapshot the BEFORE verify state next to the backup so a future
+        # `verify --diff <file>` can compute exactly what changed. We
+        # validate against the OLD expected creds (whatever was in the
+        # backup), not the new ones, so the snapshot reflects the truth
+        # at backup time. We extract them via the credentials record if
+        # one exists, otherwise we mark the expected fields as "(unknown
+        # baseline)" and the diff will still work on findings overlap.
+        local snap="$bak.verify.json"
+        local rec="$ROOT/.installed/70-wordpress-credentials.json"
+        local old_db_name="(unknown baseline)"
+        local old_db_user="(unknown baseline)"
+        local old_db_pass="(unknown baseline)"
+        local old_db_host="$db_host"
+        local old_db_port="$db_port"
+        if [ -f "$rec" ] && command -v jq >/dev/null 2>&1; then
+            old_db_name="$(jq -r '.db_name // "(unknown baseline)"' "$rec")"
+            old_db_user="$(jq -r '.db_user // "(unknown baseline)"' "$rec")"
+            old_db_pass="$(jq -r '.db_pass // "(unknown baseline)"' "$rec")"
+            old_db_host="$(jq -r '.db_host // "127.0.0.1"' "$rec")"
+            old_db_port="$(jq -r '.db_port // 3306' "$rec")"
+        fi
+        if WP_VERIFY_JSON=1 component_wordpress_verify_config \
+               "$install_path" "$old_db_name" "$old_db_user" "$old_db_pass" \
+               "$old_db_host" "$old_db_port" > "$snap" 2>/dev/null; then
+            log_ok "[70][wp][reconfigure] BEFORE-snapshot saved -> $snap"
+        else
+            # The verify itself returns nonzero when findings exist -- that's
+            # expected for a snapshot, not a failure. Only warn if the file
+            # didn't actually get written.
+            if [ -s "$snap" ]; then
+                log_ok "[70][wp][reconfigure] BEFORE-snapshot saved -> $snap (with findings)"
+            else
+                log_warn "[70][wp][reconfigure] could not write BEFORE-snapshot to $snap -- diff will not be available for this reconfigure"
+            fi
         fi
     else
         log_warn "[70][wp][reconfigure] no existing wp-config.php at $cfg -- writing fresh"
@@ -682,6 +719,11 @@ component_wordpress_reconfigure() {
     # Update credentials record so show-credentials reflects the new state.
     _wp_save_credentials_record "$install_path" "${WP_DB_ENGINE:-mysql}" \
         "$db_host" "$db_port" "$db_name" "$db_user" "$db_pass" || true
+
+    # Helpful one-liner the operator can copy/paste to see what actually changed.
+    if [ -n "$bak" ] && [ -f "$bak.verify.json" ]; then
+        log_info "[70][wp][reconfigure] diff hint: ./run.sh verify --diff $bak.verify.json"
+    fi
 
     log_ok "[70][wp][reconfigure] OK -- new credentials live; previous wp-config.php saved as wp-config.php.bak.<ts>"
     return 0
