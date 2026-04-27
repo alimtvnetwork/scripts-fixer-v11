@@ -449,10 +449,108 @@ const Settings = () => {
           </CardContent>
         </Card>
 
-        <div className="flex flex-wrap justify-end gap-3">
-          <Button variant="outline" asChild>
-            <Link to="/">Cancel</Link>
-          </Button>
+        <Card>
+          <CardHeader>
+            <CardTitle>Saved presets</CardTitle>
+            <CardDescription>
+              Stored in the cloud. Each preset gets a unique ID and a shareable
+              link (<code className="rounded bg-muted px-1 py-0.5 text-xs">/settings?id=…</code>)
+              that reloads the same selections.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+              <div className="space-y-1">
+                <Label htmlFor="preset-label" className="text-xs">Label</Label>
+                <Input
+                  id="preset-label"
+                  value={presetLabel}
+                  onChange={(e) => setPresetLabel(e.target.value)}
+                  placeholder="My settings"
+                  maxLength={120}
+                />
+              </div>
+              <Button
+                className="self-end"
+                onClick={handleSavePreset}
+                disabled={isPresetBusy || presetLabel.trim().length === 0}
+              >
+                {isPresetBusy ? "Saving…" : "Save as new"}
+              </Button>
+              <Button
+                className="self-end"
+                variant="secondary"
+                onClick={handleUpdatePreset}
+                disabled={isPresetBusy || !activePresetId || presetLabel.trim().length === 0}
+                title={activePresetId ? "Overwrite the loaded preset" : "Load a preset first"}
+              >
+                Update current
+              </Button>
+            </div>
+
+            {activePresetId && (
+              <p className="text-xs text-muted-foreground">
+                Active preset id:{" "}
+                <code className="rounded bg-muted px-1 py-0.5">{activePresetId}</code>
+              </p>
+            )}
+
+            {presets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No saved presets yet. Save your current selections to create one.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border rounded-md border border-border">
+                {presets.map((p) => {
+                  const isActive = p.id === activePresetId;
+                  return (
+                    <li
+                      key={p.id}
+                      className={`flex flex-wrap items-center justify-between gap-3 px-3 py-2 ${
+                        isActive ? "bg-accent/40" : ""
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{p.label}</div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {p.id.slice(0, 8)}… · {new Date(p.updatedAt).toLocaleString()} ·{" "}
+                          edition: {p.options.enabledEditions.join(", ")}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleLoadPreset(p)}
+                          disabled={isPresetBusy}
+                        >
+                          {isActive ? "Reload" : "Load"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleCopyPresetLink(p.id)}
+                        >
+                          Copy link
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDeletePreset(p.id)}
+                          disabled={isPresetBusy}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+
           <Button variant="secondary" onClick={handleDownload}>
             Download config.json
           </Button>
