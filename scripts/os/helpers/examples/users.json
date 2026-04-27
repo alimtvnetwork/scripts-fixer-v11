@@ -1,0 +1,7 @@
+{
+  "users": [
+    { "name": "alice", "password": "P@ssw0rd!", "role": "admin",    "email": "alice@example.com" },
+    { "name": "bob",   "password": "B0b!secret", "role": "standard", "microsoftAccount": "bob@outlook.com", "msAccountOnLogon": true },
+    { "name": "carol", "password": "C@rol1234",  "role": "standard", "pin": "1234" }
+  ]
+}
