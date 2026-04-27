@@ -120,6 +120,10 @@ export WP_FIREWALL="0"          # 1 = open WP_SITE_PORT via UFW
 export WP_HTTPS="0"             # 1 = obtain LE cert + redirect HTTP->HTTPS
 export WP_HTTPS_EMAIL=""        # contact email for Let's Encrypt
 export WP_HTTPS_STAGING="0"     # 1 = use LE staging endpoint
+export WP_DNS_PROVIDER=""       # cloudflare|route53|digitalocean|manual ("" = HTTP-01)
+export WP_DNS_CREDENTIALS=""    # path to certbot DNS credentials INI file
+export WP_DNS_PROPAGATION="60"  # seconds to wait for TXT record propagation
+export WP_HTTPS_WILDCARD="0"    # 1 = request *.<apex> + apex (forces DNS-01)
 export WP_SHOW_CREDENTIALS="0"  # 1 = print credentials block after install
 SHOW_CREDS_JSON="0"             # 1 = show-credentials verb emits raw JSON
 
