@@ -24,6 +24,22 @@
 # Flags:
 #   --interactive | -i    prompt for port / data dir / php version /
 #                         install path / site port / db name|user|pass
+#   --apt-refresh <mode>  refresh APT before installing MySQL + PHP-FPM in the
+#                         prereqs stage. Modes:
+#                           none           -- skip (default)
+#                           update         -- apt-get update -y
+#                           upgrade        -- update + apt-get upgrade -y
+#                                             --no-install-recommends
+#                           dist-upgrade   -- update + apt-get dist-upgrade -y
+#                                             --no-install-recommends
+#                         Runs ONCE per install, BEFORE component_mysql_install
+#                         and component_php_install so both pick up the
+#                         freshest mirrors. Failures are logged but do not
+#                         abort -- if mirrors are stale, the apt install
+#                         calls inside each component will surface a clearer
+#                         "Unable to locate package" error.
+#   --apt-update          shortcut for --apt-refresh update
+#   --apt-upgrade         shortcut for --apt-refresh upgrade
 #   --db mysql|mariadb    pick DB engine (default: mysql)
 #   --php <ver>           pin PHP version (8.1|8.2|8.3|latest, default: latest)
 #   --port <n>            MySQL port (default: 3306)
@@ -127,6 +143,11 @@ export WP_HTTPS_WILDCARD="0"    # 1 = request *.<apex> + apex (forces DNS-01)
 export WP_SHOW_CREDENTIALS="0"  # 1 = print credentials block after install
 SHOW_CREDS_JSON="0"             # 1 = show-credentials verb emits raw JSON
 
+# ---- prereqs.apt_refresh default (config.json overrides hardcoded "none") ---
+# Not exported here -- _resolve_apt_refresh_default does the JSON read after
+# arg parsing so an explicit --apt-refresh on the CLI always wins.
+export WP_APT_REFRESH=""        # none | update | upgrade | dist-upgrade
+
 _show_help() {
     sed -n '2,/^set -u$/p' "$0" | sed 's/^# \{0,1\}//' | head -n -1
 }
@@ -145,6 +166,10 @@ while [ $# -gt 0 ]; do
         show-credentials|show-creds|creds)
             VERB="show-credentials"; shift ;;
         -i|--interactive)  INTERACTIVE=1; shift ;;
+        --apt-refresh)     WP_APT_REFRESH="$2"; shift 2 ;;
+        --apt-refresh=*)   WP_APT_REFRESH="${1#--apt-refresh=}"; shift ;;
+        --apt-update)      WP_APT_REFRESH="update";  shift ;;
+        --apt-upgrade)     WP_APT_REFRESH="upgrade"; shift ;;
         --db)              WP_DB_ENGINE="$2"; shift 2 ;;
         --php)             WP_PHP_VERSION="$2"; shift 2 ;;
         --port)            WP_MYSQL_PORT="$2"; shift 2 ;;
