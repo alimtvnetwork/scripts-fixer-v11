@@ -44,6 +44,8 @@ Optional:
   --sudo                       add to sudo group (Linux: 'sudo', macOS: 'admin')
   --system                     create system account (Linux only; ignored on macOS)
   --dry-run                    print what would happen, change nothing
+  --ask                        prompt interactively for missing fields
+                               (username / password / comment / sudo)
 
 SSH authorized_keys (repeatable; both flags may be combined):
   --ssh-key "<key-line>"       Inline OpenSSH public key (entire single line,
