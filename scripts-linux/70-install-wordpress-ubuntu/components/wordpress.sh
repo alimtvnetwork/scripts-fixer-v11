@@ -16,6 +16,149 @@ component_wordpress_verify() {
     return 0
 }
 
+# component_wordpress_verify_config <install_path> <db_name> <db_user> <db_pass> <db_host> <db_port>
+# Strict post-generation validator for wp-config.php. Confirms:
+#   1. File exists, is non-empty, has the closing PHP marker.
+#   2. PHP syntax is valid (php -l), if php is on PATH.
+#   3. DB_NAME / DB_USER / DB_PASSWORD / DB_HOST table_prefix lines all
+#      contain the values we just installed -- no leftover '*_here' or
+#      'localhost' (when a custom port was set).
+#   4. All 8 secret keys (AUTH_KEY, SECURE_AUTH_KEY, LOGGED_IN_KEY,
+#      NONCE_KEY, AUTH_SALT, SECURE_AUTH_SALT, LOGGED_IN_SALT,
+#      NONCE_SALT) are defined exactly once.
+#   5. None of the 8 secrets equal the WordPress-shipped placeholder
+#      ("put your unique phrase here") -- catches the case where the
+#      api.wordpress.org fetch silently failed and we kept defaults.
+#   6. The 8 secret values are mutually unique (no duplicates -- the
+#      official salt API always returns 8 distinct 64-char strings, so
+#      duplicates indicate a malformed fetch or sed mishap).
+# Logs every failure with the exact file path + reason via log_file_error
+# (CODE RED rule). Returns 0 only when ALL checks pass.
+component_wordpress_verify_config() {
+    local install_path="$1"
+    local db_name="$2"
+    local db_user="$3"
+    local db_pass="$4"
+    local db_host="$5"
+    local db_port="$6"
+    local cfg="$install_path/wp-config.php"
+    local rc=0
+
+    log_info "[70][wp][verify-config] validating $cfg"
+
+    # 1. File presence + non-empty + closing tag/marker
+    if [ ! -f "$cfg" ]; then
+        log_file_error "$cfg" "wp-config.php not found after generation step"
+        return 1
+    fi
+    if [ ! -s "$cfg" ]; then
+        log_file_error "$cfg" "wp-config.php is empty (0 bytes)"
+        return 1
+    fi
+    # WordPress wp-config.php ends with: /* That's all, stop editing! Happy publishing. */
+    if ! sudo grep -q "stop editing" "$cfg"; then
+        log_file_error "$cfg" "wp-config.php missing 'stop editing' end marker -- file may be truncated"
+        rc=1
+    fi
+
+    # 2. PHP syntax check (only if php is available -- it should be after prereqs)
+    if command -v php >/dev/null 2>&1; then
+        local lint_out
+        lint_out="$(sudo php -l "$cfg" 2>&1)"
+        if ! echo "$lint_out" | grep -q "No syntax errors"; then
+            log_file_error "$cfg" "PHP syntax check failed: $lint_out"
+            rc=1
+        fi
+    else
+        log_warn "[70][wp][verify-config] php not on PATH -- skipping syntax lint"
+    fi
+
+    # 3. DB credentials present
+    # Use sudo grep because wp-config.php is chmod 640 owned by www-data.
+    local cfg_dump; cfg_dump="$(sudo cat "$cfg")"
+
+    _wp_check_define() {
+        local const="$1" expected="$2"
+        # Match: define( 'CONST', 'value' );  or  define('CONST','value');
+        local line
+        line="$(printf '%s\n' "$cfg_dump" | grep -E "define\(\s*['\"]${const}['\"]" | head -1)"
+        if [ -z "$line" ]; then
+            log_file_error "$cfg" "missing define('${const}', ...) line"
+            return 1
+        fi
+        # Extract the second quoted argument (single OR double quotes).
+        local val
+        val="$(printf '%s\n' "$line" | sed -E "s/.*define\(\s*['\"]${const}['\"]\s*,\s*['\"]([^'\"]*)['\"].*/\1/")"
+        if [ "$val" != "$expected" ]; then
+            log_file_error "$cfg" "define('${const}') = '${val}' but expected '${expected}'"
+            return 1
+        fi
+        return 0
+    }
+
+    _wp_check_define "DB_NAME"     "$db_name"            || rc=1
+    _wp_check_define "DB_USER"     "$db_user"            || rc=1
+    _wp_check_define "DB_PASSWORD" "$db_pass"            || rc=1
+    _wp_check_define "DB_HOST"     "${db_host}:${db_port}" || rc=1
+
+    # Catch any leftover placeholders from wp-config-sample.php
+    if printf '%s\n' "$cfg_dump" | grep -qE 'database_name_here|username_here|password_here'; then
+        log_file_error "$cfg" "wp-config.php still contains *_here placeholder(s) -- sed replacement did not run"
+        rc=1
+    fi
+
+    # 4. + 5. + 6. Secret keys / salts
+    local keys=("AUTH_KEY" "SECURE_AUTH_KEY" "LOGGED_IN_KEY" "NONCE_KEY" \
+                "AUTH_SALT" "SECURE_AUTH_SALT" "LOGGED_IN_SALT" "NONCE_SALT")
+    local placeholder="put your unique phrase here"
+    local salt_values=()
+    local k
+    for k in "${keys[@]}"; do
+        local count
+        count="$(printf '%s\n' "$cfg_dump" | grep -cE "define\(\s*['\"]${k}['\"]")"
+        if [ "$count" -eq 0 ]; then
+            log_file_error "$cfg" "salt define('${k}') is missing"
+            rc=1
+            continue
+        fi
+        if [ "$count" -gt 1 ]; then
+            log_file_error "$cfg" "salt define('${k}') is defined ${count} times (must be exactly 1) -- awk strip likely failed"
+            rc=1
+        fi
+        local sval
+        sval="$(printf '%s\n' "$cfg_dump" | grep -E "define\(\s*['\"]${k}['\"]" | head -1 \
+                | sed -E "s/.*define\(\s*['\"]${k}['\"]\s*,\s*['\"]([^'\"]*)['\"].*/\1/")"
+        if [ -z "$sval" ]; then
+            log_file_error "$cfg" "salt ${k} has empty value"
+            rc=1
+        elif [ "$sval" = "$placeholder" ]; then
+            log_file_error "$cfg" "salt ${k} still equals shipped placeholder '${placeholder}' -- api.wordpress.org fetch failed and was not noticed"
+            rc=1
+        elif [ "${#sval}" -lt 32 ]; then
+            log_file_error "$cfg" "salt ${k} value is only ${#sval} chars (expected >= 32 from api.wordpress.org)"
+            rc=1
+        fi
+        salt_values+=("$sval")
+    done
+
+    # Mutual uniqueness check (8 distinct values)
+    if [ "${#salt_values[@]}" -eq 8 ]; then
+        local uniq_count
+        uniq_count="$(printf '%s\n' "${salt_values[@]}" | sort -u | wc -l)"
+        if [ "$uniq_count" -ne 8 ]; then
+            log_file_error "$cfg" "salt values are not mutually unique (${uniq_count}/8 distinct) -- duplicate salt = weakened security"
+            rc=1
+        fi
+    fi
+
+    if [ "$rc" -eq 0 ]; then
+        log_ok "[70][wp][verify-config] OK -- DB creds match, 8 unique salts present, syntax clean"
+    else
+        log_err "[70][wp][verify-config] FAILED -- see [70][wp][verify-config] errors above"
+    fi
+    return "$rc"
+}
+
 _wp_mysql_run() {
     # Run a SQL command as root via socket auth (default on Ubuntu MySQL 8).
     local sql="$1"
