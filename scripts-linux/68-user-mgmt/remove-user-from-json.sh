@@ -29,6 +29,7 @@
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/helpers/_common.sh"
+. "$SCRIPT_DIR/helpers/_schema.sh"
 
 # As of v0.203.0 this loader applies each record IN-PROCESS via the shared
 # um_user_delete + um_purge_home helpers rather than forking
@@ -37,44 +38,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 UM_ALLOWED_FIELDS="name purgeHome purgeProfile removeMailSpool"
 
-_validate_remove_record() {
-    local rec="$1"
-    local toptype
-    toptype=$(jq -r 'type' <<< "$rec")
-    if [ "$toptype" != "object" ]; then
-        printf 'ERROR\t<root>\tnot an object (got %s)\n' "$toptype"
-        return 0
-    fi
-    jq -r --arg allowed "$UM_ALLOWED_FIELDS" '
-        def expect(field; want):
-            if has(field) then
-                (.[field] | type) as $t
-                | if $t != want then "ERROR\t\(field)\twrong type: expected \(want), got \($t)"
-                  else empty end
-            else empty end;
-
-        def expect_nonempty_string(field):
-            if has(field) then
-                (.[field]) as $v | ($v | type) as $t
-                | if $t == "null" then "ERROR\t\(field)\tnull value"
-                  elif $t != "string" then "ERROR\t\(field)\twrong type: expected string, got \($t)"
-                  elif ($v | length) == 0 then "ERROR\t\(field)\tempty string"
-                  else empty end
-            else empty end;
-
-        ( if has("name") | not then "ERROR\tname\tmissing required field" else empty end ),
-        expect_nonempty_string("name"),
-        expect("purgeHome";       "boolean"),
-        expect("purgeProfile";    "boolean"),
-        expect("removeMailSpool"; "boolean"),
-
-        ( ($allowed | split(" ")) as $known
-          | keys[]
-          | select(. as $k | ($known | index($k)) | not)
-          | "WARN\t\(.)\tunknown field (allowed: \($allowed))"
-        )
-    ' <<< "$rec" 2>/dev/null
-}
+UM_SCHEMA_REQUIRED="name"
+UM_SCHEMA_FIELDS="name:nestr purgeHome:bool purgeProfile:bool removeMailSpool:bool"
 
 um_usage() {
   cat <<EOF
@@ -123,27 +88,10 @@ um_detect_os || exit $?
 um_require_root || exit $?
 if [ "$UM_DRY_RUN" = "1" ]; then log_warn "$(um_msg dryRunBanner 2>/dev/null || echo "[dry-run] no host mutation will occur")"; fi
 
-# Normalise into an array on stdout. The bare-string list case
-# ([ "alice", "bob" ]) is converted to objects up front so the rest of
-# the loop only ever sees [ {name: ...}, ... ].
-normalised=$(jq -c '
-  ( if   type == "object" and has("users") and (.users|type=="array") then .users
-    elif type == "array"  then .
-    elif type == "object" then [ . ]
-    else error("top-level must be object or array")
-    end
-  )
-  | map(if type == "string" then { name: . } else . end)
-' "$UM_FILE" 2>/tmp/68-jq-err.$$)
-jq_rc=$?
-if [ "$jq_rc" -ne 0 ]; then
-  err_text=$(cat /tmp/68-jq-err.$$ 2>/dev/null); rm -f /tmp/68-jq-err.$$
-  log_err "JSON parse failed for exact path: '$UM_FILE' (failure: $err_text)"
-  exit 2
-fi
-rm -f /tmp/68-jq-err.$$
-
-count=$(jq 'length' <<< "$normalised")
+# Normalise (bare-string list converted to {name: ...} via --allow-strings).
+um_schema_normalize_array "$UM_FILE" "users" --allow-strings || exit 2
+normalised="$UM_NORMALIZED_JSON"
+count="$UM_NORMALIZED_COUNT"
 log_info "loaded $count user-removal record(s) from '$UM_FILE'"
 
 # In-process applicator. Resolves the user's home dir BEFORE deleting the
@@ -184,31 +132,13 @@ i=0
 while [ "$i" -lt "$count" ]; do
   rec=$(jq -c ".[$i]" <<< "$normalised")
 
-  validation_out=$(_validate_remove_record "$rec")
-  err_count=0
-  if [ -n "$validation_out" ]; then
-    while IFS=$'\t' read -r severity field reason; do
-      [ -z "$severity" ] && continue
-      case "$severity" in
-        ERROR)
-          err_count=$((err_count+1))
-          log_err "JSON record #$i in '$UM_FILE' field '$field': $reason (failure: rejecting record)"
-          ;;
-        WARN)
-          log_warn "JSON record #$i in '$UM_FILE' field '$field': $reason"
-          ;;
-      esac
-    done <<< "$validation_out"
-  fi
+  validation_out=$(um_schema_validate_record "$rec" "$UM_ALLOWED_FIELDS" \
+    "$UM_SCHEMA_REQUIRED" "$UM_SCHEMA_FIELDS")
+  um_schema_report "$i" "$UM_FILE" "$validation_out" "plain"
+  name=$(um_schema_record_name "$rec")
 
-  if [ "$(jq -r 'type' <<< "$rec")" = "object" ]; then
-    name=$(jq -r '.name // "<missing>"' <<< "$rec")
-  else
-    name="<not-an-object>"
-  fi
-
-  if [ "$err_count" -gt 0 ]; then
-    log_err "rejected record #$i in '$UM_FILE' for user='$name' ($err_count schema error(s))"
+  if [ "$UM_SCHEMA_ERR_COUNT" -gt 0 ]; then
+    log_err "rejected record #$i in '$UM_FILE' for user='$name' ($UM_SCHEMA_ERR_COUNT schema error(s))"
     rc_total=1
     i=$((i+1)); continue
   fi
