@@ -354,6 +354,14 @@ switch ($normalizedAction) {
         & (Join-Path $scriptDir "helpers\add-user-from-json.ps1") @Rest
         exit $LASTEXITCODE
     }
+    { $_ -in @("add-group", "addgroup", "new-group") } {
+        & (Join-Path $scriptDir "helpers\add-group.ps1") @Rest
+        exit $LASTEXITCODE
+    }
+    { $_ -in @("add-group-json", "addgroupjson", "add-groups-json", "group-json") } {
+        & (Join-Path $scriptDir "helpers\add-group-from-json.ps1") @Rest
+        exit $LASTEXITCODE
+    }
     { $_ -in @("startup-add", "startupadd") } {
         & (Join-Path $scriptDir "helpers\startup-add.ps1") @Rest
         exit $LASTEXITCODE
