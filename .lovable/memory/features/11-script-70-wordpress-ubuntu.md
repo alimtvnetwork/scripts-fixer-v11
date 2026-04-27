@@ -62,6 +62,23 @@ nginx vhost write failures, tar extract failures, missing
 - `nginx.sh`: re-writes vhost on every run (cheap, keeps it in sync)
 - `wordpress.sh`: skips download when `$WP_INSTALL_PATH/wp-config.php` exists
 
+### Prerequisites stage (v0.156.0)
+`run.sh` exposes a dedicated `_install_prerequisites` stage and CLI verb
+(`install prereqs` / `install prerequisites`). It runs MySQL + PHP first,
+then calls `component_php_verify_strict` which:
+- Parses `PHP_VERSION` and refuses anything below 7.4 (WordPress 6.x min).
+- Checks every required extension is loaded: **mysqli mbstring xml curl
+  intl gd**. Logs the missing list + the exact `apt-get install` line to
+  fix it.
+- Logs `[70][prereqs]` markers so the operator sees the boundary clearly.
+
+`_install_all` now delegates the first two stages to `_install_prerequisites`
+instead of calling `component_mysql_install` + `component_php_install`
+directly -- nginx + WordPress only run when prereqs pass strict verify.
+
+`component_php_verify` (loose check) is unchanged so existing call sites
+(`_check_all`, `php.sh` idempotency check) keep their fast path.
+
 ### Repository policy (v0.155.0, confirmed)
 `components/php.sh` auto-detects Ubuntu via `/etc/os-release` and decides:
 
