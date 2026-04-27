@@ -218,3 +218,42 @@ active scope. Verified across 4 test scopes:
 | `apt/stable` | `code.desktop` + `code-url-handler.desktop`; `/usr/share/code/...` integration root |
 | `apt/insiders` | Insiders names only; `Open with Code` correctly excluded |
 | empty | Zero matches → REPORT-ONLY kicks in |
+
+## v0.169.0 — Before/after verification step
+
+Added `_collect_state_snapshot` (read-only probe) + `_print_state_diff`
+(classified report) + `verb_verify` (standalone). Wired into
+`verb_uninstall` so every cleanup run prints a clear before/after summary.
+
+### Probed surfaces (read-only)
+1. **VS Code .desktop files** in 5 known applications dirs (8 known
+   basenames including snap `code_code.desktop` + flatpak
+   `com.visualstudio.code.desktop`). Sub-probes: residual `MimeType=`,
+   `Actions=`, `[Desktop Action *]` blocks.
+2. **mimeapps.list / defaults.list** — one row per line whose RHS
+   references a `code*.desktop` handler (across 6 user/system locations).
+3. **Nautilus / Nemo / Caja scripts** — name-match OR content-match
+   (files <64KB grepped for `\bcode\b`). Catches scripts named
+   generically like `launch-editor.sh` that internally call code.
+4. **File-manager action files** (.desktop / .nemo_action) referencing code.
+5. **VS Code integration shims** (`code-context.sh`,
+   `code-shell-integration.sh`, `open-with-code.sh`) inside install trees
+   — searched 3 levels deep to catch `~/.vscode/bin/<sha>/code-context.sh`.
+6. **`xdg-mime query default`** — only flags when the active handler
+   IS a code* desktop file. The user-facing "what app opens .py right now?".
+
+### Output classification
+Each diff classifies findings as REMOVED (green ok), STILL PRESENT
+(yellow warn), or NEW (yellow warn — appeared between snapshots).
+Final VERDICT line: clean / residue remains.
+
+### Verified (3 scenarios)
+- **Dirty fixture** → 9 findings; nemo script matched by **content** not
+  name (proves fallback works); firefox.desktop correctly NOT flagged.
+- **Partial cleanup** → 5 REMOVED + 4 STILL PRESENT, exact classification.
+- **Clean system** → "No VS Code context-menu / MIME entries found",
+  zero false positives.
+
+### New verb: `verify`
+`./run.sh verify` — read-only single snapshot, no diff. Useful pre-flight
+check or for confirming a manual cleanup worked.
