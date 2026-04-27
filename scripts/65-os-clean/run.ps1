@@ -152,20 +152,24 @@ function Invoke-OsClean {
     param([string[]]$ExtraArgs, [string]$OutFile)
     $allArgs = @('clean') + $Forwarded + $ExtraArgs
     Write-Info ("delegating: pwsh `"{0}`" {1}" -f $OsRunner, ($allArgs -join ' '))
-    # Capture both streams. We use & with a redirection to a file; the file
-    # is the source of truth, and we also stream to console so the operator
-    # sees progress live. CRITICAL: pipe the Tee output to Out-Host so it
-    # does NOT contaminate the function's return value (otherwise the
-    # caller receives an array of HostInformation records instead of $rc).
+    # Capture all streams into the log file. We deliberately do NOT Tee
+    # back to the pipeline because Tee-Object/Write-Host both emit
+    # HostInformation records that contaminate the function return value.
+    # Operator visibility is preserved by streaming the captured file
+    # contents to the host AFTER capture, then returning a scalar int.
     $rc = 0
     try {
-        & $OsRunner @allArgs *>&1 | Tee-Object -LiteralPath $OutFile | Out-Host
+        & $OsRunner @allArgs *>&1 > $OutFile
         $rc = $LASTEXITCODE
         if ($null -eq $rc) { $rc = 0 }
     } catch {
         Write-Err2 ("delegate threw: " + $_.Exception.Message)
         $rc = 30
         $_.Exception.Message | Add-Content -LiteralPath $OutFile
+    }
+    # Stream captured output to the host so the operator sees progress.
+    if (Test-Path -LiteralPath $OutFile) {
+        Get-Content -LiteralPath $OutFile | ForEach-Object { Write-Host "    $_" }
     }
     # Force scalar int return -- prevents pipeline contamination upstream.
     return [int]$rc
