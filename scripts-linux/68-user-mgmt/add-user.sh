@@ -156,6 +156,14 @@ UM_NO_MANIFEST="${UM_NO_MANIFEST:-0}"
 # Failures during auto-prune NEVER fail the install -- they're warned and
 # the operator is told to run `remove-ssh-keys.sh --prune` manually.
 UM_NO_AUTO_PRUNE="${UM_NO_AUTO_PRUNE:-0}"
+# Summary JSON knobs (v0.182.0). Empty = disabled. Special values:
+#   "auto"   = write to <manifest-dir>/summaries/<run-id>__<user>.summary.json
+#   "stdout" = append to stdout after the human summary
+#   <path>   = write to that exact path
+# UM_NO_SUMMARY_JSON forcibly disables (used by batch loader to suppress
+# child-level emission when a batch rollup is being assembled).
+UM_SUMMARY_JSON="${UM_SUMMARY_JSON:-}"
+UM_NO_SUMMARY_JSON="${UM_NO_SUMMARY_JSON:-0}"
 # Per-key source tags accumulated during the install pass. Same length /
 # order as the de-duplicated key buffer, used by the manifest writer to
 # remember WHERE each tracked key came from.
