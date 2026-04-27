@@ -318,8 +318,27 @@ fi
 # Skipped silently when no keys were supplied. Skipped (with a warn) if the
 # home directory does not exist on disk -- which can happen when --system
 # is used without --create-home, or when --dry-run prevented home creation.
-UM_SSH_INSTALLED_COUNT=0
-UM_SSH_REQUESTED_COUNT=$(( ${#UM_SSH_KEYS[@]} + ${#UM_SSH_KEY_FILES[@]} + ${#UM_SSH_KEY_URLS[@]} ))
+# SSH key counters (renamed in v0.173.0 so the summary is unambiguous):
+#   sources_requested  : how many --ssh-key / --ssh-key-file / --ssh-key-url
+#                        flags the operator passed (each file/URL is ONE
+#                        source even if it contains many keys).
+#   keys_parsed        : total non-blank, non-comment, algo-valid key lines
+#                        read from all sources combined (BEFORE intra-run
+#                        de-dup -- the same key listed in two files counts
+#                        twice here).
+#   keys_unique        : keys_parsed after dropping intra-run duplicates.
+#                        This is the maximum that COULD land in the file.
+#   keys_installed_new : net-new lines actually appended to authorized_keys
+#                        (keys_unique minus any already present in the
+#                        existing file). This is the "did anything change?"
+#                        number.
+#   keys_preserved     : pre-existing lines in authorized_keys that we left
+#                        untouched. Confirms we didn't clobber anything.
+UM_SSH_SOURCES_REQUESTED=$(( ${#UM_SSH_KEYS[@]} + ${#UM_SSH_KEY_FILES[@]} + ${#UM_SSH_KEY_URLS[@]} ))
+UM_SSH_KEYS_PARSED=0
+UM_SSH_KEYS_UNIQUE=0
+UM_SSH_KEYS_INSTALLED_NEW=0
+UM_SSH_KEYS_PRESERVED=0
 
 # --- URL-based ssh key fetcher (added v0.171.0) -----------------------------
 # _ssh_url_host_allowed <host>
