@@ -97,6 +97,16 @@ Write-Info "running: $scanner"
 $scanExit = $LASTEXITCODE
 if ($scanExit -eq 0) {
     Write-OkMsg 'scanner reports PASS -- repo is clean'
+    # Remove the backup directory if it ended up empty (no files rewritten).
+    if ((Test-Path -LiteralPath $backupDir) -and -not (Get-ChildItem -LiteralPath $backupDir -Force -ErrorAction SilentlyContinue)) {
+        try {
+            Remove-Item -LiteralPath $backupDir -Force -ErrorAction Stop
+            $parent = Split-Path -Parent $backupDir
+            if ((Test-Path -LiteralPath $parent) -and -not (Get-ChildItem -LiteralPath $parent -Force -ErrorAction SilentlyContinue)) {
+                Remove-Item -LiteralPath $parent -Force -ErrorAction SilentlyContinue
+            }
+        } catch { }
+    }
     exit 0
 }
 if ($scanExit -ne 1) {
