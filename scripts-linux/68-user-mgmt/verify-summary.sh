@@ -367,11 +367,11 @@ if [ "$VS_PRINT_SCHEMA" = "1" ]; then
         ],
         fields: {
           summaryVersion:     { type: "integer", const: 1, description: "Schema version. Validator only knows v1." },
-          kind:               { type: "string",  enum: ["user"], default: "user", description: "Discriminator. Absent or 'user' for per-user docs." },
+          kind:               { type: "string",  enum: ["user"], default: "user", description: "Discriminator. Absent or `user` for per-user docs." },
           writtenAt:          { type: "string",  format: "date-time", description: "ISO-8601 timestamp the summary was emitted (UTC preferred)." },
           host:               { type: "string",  minLength: 1, description: "Hostname of the machine that ran add-user.sh." },
           user:               { type: "string",  minLength: 1, description: "Unix username the keys were installed for." },
-          runId:              { type: "string",  pattern: "^[0-9]{8}-[0-9]{6}-.+$", description: "Rollback run-id; matches the manifest filename '<run-id>__<user>.json'." },
+          runId:              { type: "string",  pattern: "^[0-9]{8}-[0-9]{6}-.+$", description: "Rollback run-id; matches the manifest filename `<run-id>__<user>.json`." },
           scriptVersion:      { type: "string",  description: "scripts/version.json value at install time." },
           authorizedKeysFile: { type: "string",  description: "Absolute path of the authorized_keys file the keys were appended to." },
           manifestFile:       { type: ["string","null"], description: "Absolute path of the rollback manifest, or null when --no-manifest was used." },
@@ -445,7 +445,7 @@ if [ "$VS_PRINT_SCHEMA" = "1" ]; then
         discriminator: { field: "kind", value: "batch" },
         fields: {
           summaryVersion: { type: "integer", const: 1, description: "Schema version. Validator only knows v1." },
-          kind:           { type: "string",  enum: ["batch"], description: "Discriminator. MUST equal 'batch' for batch rollups." },
+          kind:           { type: "string",  enum: ["batch"], description: "Discriminator. MUST equal `batch` for batch rollups." },
           writtenAt:      { type: "string",  format: "date-time" },
           runId:          { type: "string",  pattern: "^[0-9]{8}-[0-9]{6}-.+$", description: "Shared run-id across the whole batch." },
           sourceFile:     { type: "string",  description: "Absolute path of the input JSON file the batch was loaded from." },
