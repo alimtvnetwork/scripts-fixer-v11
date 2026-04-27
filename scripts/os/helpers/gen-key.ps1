@@ -33,6 +33,7 @@ $sharedDir  = Join-Path (Split-Path -Parent $scriptDir) "shared"
 
 . (Join-Path $sharedDir "logging.ps1")
 . (Join-Path $sharedDir "json-utils.ps1")
+. (Join-Path $helpersDir "_common.ps1")
 $promptHelper = Join-Path $helpersDir "_prompt.ps1"
 if (Test-Path $promptHelper) { . $promptHelper }
 $ledgerHelper = Join-Path $helpersDir "_ssh-ledger.ps1"
@@ -177,26 +178,20 @@ if (Get-Command Add-SshLedgerEntry -ErrorAction SilentlyContinue) {
 }
 
 # ---- ACL hardening (CODE RED -- never swallow icacls failures) ----
-# Same restrictive set the Linux numeric chown produces: only the
-# owning user, SYSTEM, and Administrators may read. Inheritance disabled.
+# Delegate to Set-SshFileAcl so gen-key matches install-key/revoke-key exactly:
+#   * /inheritance:r           -> drop inherited ACEs
+#   * /grant:r SYSTEM/Admins/U -> replace grants
+#   * /remove:g Authenticated Users / Everyone / Users -> strip world access
+#   * /setowner <user>         -> let the user rotate keys without admin
 # When $targetUser is unset (default %USERPROFILE%\.ssh), use $env:USERNAME.
 $aclUser = if ($targetUser) { $targetUser } else { $env:USERNAME }
-$aclTargets = @($sshDir, $out, "$out.pub")
-foreach ($t in $aclTargets) {
-    # /inheritance:r  -> remove inherited ACEs
-    # /grant:r        -> replace any existing grants for the principal
-    & icacls $t /inheritance:r 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Log "sshAclHardenFail: icacls /inheritance:r failed at exact path: '$t' for user='$aclUser' (failure: icacls exit $LASTEXITCODE)" -Level "fail"
-        Save-LogFile -Status "fail"; exit 1
-    }
-    & icacls $t /grant:r "${aclUser}:(F)" "SYSTEM:(F)" "Administrators:(F)" 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Log "sshAclHardenFail: icacls /grant:r failed at exact path: '$t' for user='$aclUser' (failure: icacls exit $LASTEXITCODE)" -Level "fail"
+foreach ($t in @($sshDir, $out, "$out.pub")) {
+    if (-not (Set-SshFileAcl -Path $t -User $aclUser)) {
+        Write-Log "sshAclHardenFail: Set-SshFileAcl returned false at exact path: '$t' for user='$aclUser' (failure: see preceding icacls error)" -Level "fail"
         Save-LogFile -Status "fail"; exit 1
     }
 }
-Write-Log "sshAclHardened: applied restrictive ACL ($aclUser + SYSTEM + Administrators) to SSH dir + keypair at '$sshDir'." -Level "info"
+Write-Log "sshAclHardened: applied restrictive ACL ($aclUser + SYSTEM + Administrators, no inheritance) to SSH dir + keypair at '$sshDir'." -Level "info"
 
 Write-Host ""
 Write-Host "  Key Generation Summary" -ForegroundColor Cyan
