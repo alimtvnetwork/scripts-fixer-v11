@@ -69,7 +69,7 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 # -- Helper: fetch payload semver from a repo's scripts/version.json -------
-# Args: <repo-vN-name>   (e.g. scripts-fixer-v8)
+# Args: <repo-vN-name>   (e.g. scripts-fixer-v11)
 # Echoes: "X.Y.Z" on success, "(unknown)" on any failure (network, missing
 #         file, malformed JSON). Never fails the caller -- version reporting
 #         must remain best-effort.

@@ -28,7 +28,7 @@
 When a user pipes `install.ps1` (Windows) or `install.sh` (Unix/macOS) from a
 specific versioned repository (e.g. `scripts-fixer-v5`), the bootstrap should
 **transparently redirect to the newest published version** of the repo
-(e.g. `scripts-fixer-v9`) instead of installing a stale generation.
+(e.g. `scripts-fixer-v11`) instead of installing a stale generation.
 
 This solves the problem of users sharing or bookmarking old one-liners and
 unknowingly installing outdated code.
@@ -42,7 +42,7 @@ github.com/<owner>/scripts-fixer-v1
 github.com/<owner>/scripts-fixer-v2
 ...
 github.com/<owner>/scripts-fixer-v7      <-- current
-github.com/<owner>/scripts-fixer-v8      <-- not yet created
+github.com/<owner>/scripts-fixer-v11      <-- not yet created
 ```
 
 Each major generation lives in its own repo. A user who runs:
@@ -253,7 +253,7 @@ exit 0
 
 ## Release / Version Bump Checklist
 
-When copying `install.ps1` and `install.sh` into a new `-vN` repository (e.g., `scripts-fixer-v8`), update these values before committing:
+When copying `install.ps1` and `install.sh` into a new `-vN` repository (e.g., `scripts-fixer-v11`), update these values before committing:
 
 ### install.ps1
 - [ ] `$current = 7` → Bump to new version number (e.g., `$current = 8`)
