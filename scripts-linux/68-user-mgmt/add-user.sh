@@ -1075,6 +1075,16 @@ if [ "$UM_SSH_SOURCES_REQUESTED" -gt 0 ]; then
     fi
     um_summary_add "ok" "ssh-key" "$UM_NAME" \
       "sources=$UM_SSH_SOURCES_REQUESTED parsed=$UM_SSH_KEYS_PARSED unique=$UM_SSH_KEYS_UNIQUE new=$UM_SSH_KEYS_INSTALLED_NEW preserved=$UM_SSH_KEYS_PRESERVED"
+
+    # v0.182.0 -- emit structured install summary JSON if requested.
+    # _ssh_file is set inside the install pass above; fall back to the
+    # canonical authorized_keys path if it isn't (defensive -- never
+    # block the summary on a missing local var).
+    if [ -n "$UM_SUMMARY_JSON" ] && [ "$UM_NO_SUMMARY_JSON" != "1" ]; then
+        _um_write_summary_json "$UM_NAME" \
+            "${_ssh_file:-$UM_HOME/.ssh/authorized_keys}" \
+            "$UM_SUMMARY_JSON"
+    fi
   fi
 fi
 
