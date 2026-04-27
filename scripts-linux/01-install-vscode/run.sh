@@ -755,13 +755,283 @@ verb_scope() {
 
 verb_repair() { rm -f "$INSTALLED_MARK"; verb_install; }
 
+# --- State verification ----------------------------------------------------
+# Probe every surface that the cleaners touch and emit one TSV row per
+# finding to stdout. Format (tab-separated):
+#   <category>\t<key>\t<status>\t<detail>
+# where:
+#   category = desktop-file | mime-default | mime-association
+#            | nautilus-script | nemo-script | caja-script
+#            | fm-action | integration-shim | xdg-mime-default
+#   key      = a stable identifier for the row (path or "mime:handler")
+#   status   = PRESENT
+#   detail   = freeform context (which file, which line, etc.)
+#
+# This is read-only -- no files are modified. Used both standalone
+# (verb_verify) and as the before/after probes around uninstall.
+_collect_state_snapshot() {
+    local out="$1"
+    : > "$out"
+
+    # 1. VS Code .desktop files in any known applications dir.
+    local dirs=(
+        "$HOME/.local/share/applications"
+        "/usr/share/applications"
+        "/var/lib/snapd/desktop/applications"
+        "/var/lib/flatpak/exports/share/applications"
+        "$HOME/.local/share/flatpak/exports/share/applications"
+    )
+    local names=(
+        code.desktop code-url-handler.desktop code_code.desktop
+        code-insiders.desktop code-insiders-url-handler.desktop code_code-insiders.desktop
+        com.visualstudio.code.desktop com.visualstudio.code.insiders.desktop
+    )
+    local d n p
+    for d in "${dirs[@]}"; do
+        [ -d "$d" ] || continue
+        for n in "${names[@]}"; do
+            p="$d/$n"
+            if [ -f "$p" ]; then
+                printf 'desktop-file\t%s\tPRESENT\tfile exists\n' "$p" >> "$out"
+                # Sub-probe: does it still claim MimeType= or Actions=?
+                if grep -qE '^[[:space:]]*MimeType[[:space:]]*=' "$p" 2>/dev/null; then
+                    local mt
+                    mt=$(grep -m1 -E '^[[:space:]]*MimeType[[:space:]]*=' "$p" 2>/dev/null | head -c 120)
+                    printf 'desktop-file-mimetype\t%s\tPRESENT\t%s\n' "$p" "$mt" >> "$out"
+                fi
+                if grep -qE '^[[:space:]]*Actions[[:space:]]*=' "$p" 2>/dev/null; then
+                    printf 'desktop-file-actions\t%s\tPRESENT\tActions= line still set\n' "$p" >> "$out"
+                fi
+                if grep -qE '^\[Desktop Action ' "$p" 2>/dev/null; then
+                    local count
+                    count=$(grep -cE '^\[Desktop Action ' "$p" 2>/dev/null || echo 0)
+                    printf 'desktop-file-action-block\t%s\tPRESENT\t%s [Desktop Action *] block(s)\n' "$p" "$count" >> "$out"
+                fi
+            fi
+        done
+    done
+
+    # 2. mimeapps.list / defaults.list -- one row per code* handler line.
+    local mime_files=(
+        "$HOME/.config/mimeapps.list"
+        "$HOME/.local/share/applications/mimeapps.list"
+        "$HOME/.local/share/applications/defaults.list"
+        "/usr/share/applications/mimeapps.list"
+        "/usr/share/applications/defaults.list"
+        "/etc/xdg/mimeapps.list"
+    )
+    local f line
+    for f in "${mime_files[@]}"; do
+        [ -f "$f" ] || continue
+        # grep for any line whose RHS references a code* desktop file.
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            printf 'mime-association\t%s\tPRESENT\t%s\n' "$f" "$line" >> "$out"
+        done < <(grep -nE '=.*\bcode(-insiders)?(_code(-insiders)?)?\.desktop' "$f" 2>/dev/null \
+                | grep -v '^#' | head -50)
+    done
+
+    # 3. Nautilus / Nemo / Caja scripts directories.
+    local script_dirs=(
+        "nautilus:$HOME/.local/share/nautilus/scripts"
+        "nautilus:$HOME/.gnome2/nautilus-scripts"
+        "nemo:$HOME/.local/share/nemo/scripts"
+        "caja:$HOME/.config/caja/scripts"
+        "caja:$HOME/.local/share/caja/scripts"
+    )
+    local entry mgr base
+    for entry in "${script_dirs[@]}"; do
+        mgr="${entry%%:*}"; base="${entry#*:}"
+        [ -d "$base" ] || continue
+        # Find any file (or symlink) under the dir whose name OR content
+        # references VS Code. Limit depth to 2 -- some scripts live in
+        # subfolders like "Open with Code/launcher.sh".
+        while IFS= read -r p; do
+            [ -n "$p" ] || continue
+            local why="name"
+            if ! basename "$p" | grep -qiE 'code|vscode'; then
+                why="content"
+            fi
+            printf '%s-script\t%s\tPRESENT\tmatched-by:%s\n' "$mgr" "$p" "$why" >> "$out"
+        done < <(find "$base" -maxdepth 2 \( -type f -o -type l \) 2>/dev/null \
+                 | while read -r p; do
+                       if basename "$p" | grep -qiE 'code|vscode'; then
+                           echo "$p"
+                       elif [ -r "$p" ] && [ "$(stat -c %s "$p" 2>/dev/null || echo 99999999)" -lt 65536 ]; then
+                           grep -qiE '\b(code|code-insiders)\b' "$p" 2>/dev/null && echo "$p"
+                       fi
+                   done)
+    done
+
+    # 4. File-manager action files (.desktop / .nemo_action) referencing code.
+    local action_dirs=(
+        "$HOME/.local/share/file-manager/actions"
+        "/usr/share/file-manager/actions"
+        "$HOME/.local/share/nemo/actions"
+        "/usr/share/nemo/actions"
+        "$HOME/.config/caja/actions"
+        "/usr/share/caja/actions"
+    )
+    for d in "${action_dirs[@]}"; do
+        [ -d "$d" ] || continue
+        while IFS= read -r p; do
+            [ -n "$p" ] || continue
+            printf 'fm-action\t%s\tPRESENT\taction file references code\n' "$p" >> "$out"
+        done < <(grep -ril -E '\b(code|code-insiders)\b' "$d" 2>/dev/null \
+                 --include='*.desktop' --include='*.nemo_action' | head -20)
+    done
+
+    # 5. VS Code integration shims (code-context.sh etc.) inside install trees.
+    local int_roots=(
+        "/usr/share/code/resources/app/bin"
+        "/usr/share/code-insiders/resources/app/bin"
+        "/snap/code/current/usr/share/code/resources/app/bin"
+        "/var/lib/flatpak/app/com.visualstudio.code/current/active/files/extra/vscode/bin"
+        "/opt/visual-studio-code/bin"
+        "$HOME/.vscode/bin"
+        "$HOME/.vscode-insiders/bin"
+    )
+    local int_files=(code-context.sh code-shell-integration.sh open-with-code.sh)
+    for d in "${int_roots[@]}"; do
+        [ -d "$d" ] || continue
+        for n in "${int_files[@]}"; do
+            # Search up to 3 levels deep -- ~/.vscode/bin/<sha>/code-context.sh.
+            while IFS= read -r p; do
+                [ -n "$p" ] || continue
+                printf 'integration-shim\t%s\tPRESENT\tname=%s\n' "$p" "$n" >> "$out"
+            done < <(find "$d" -maxdepth 3 -type f -name "$n" 2>/dev/null)
+        done
+    done
+
+    # 6. xdg-mime defaults for common text/code MIME types -- the user-facing
+    #    "what app opens .py / .json / .md right now?" answer.
+    if command -v xdg-mime >/dev/null 2>&1; then
+        local mt handler
+        for mt in text/plain text/x-shellscript text/x-python text/x-c text/x-csrc \
+                  text/x-c++src text/x-java application/json application/xml \
+                  text/markdown text/html; do
+            handler=$(xdg-mime query default "$mt" 2>/dev/null || true)
+            if printf '%s' "$handler" | grep -qE '^code(-insiders)?(_code(-insiders)?)?\.desktop$|^com\.visualstudio\.code'; then
+                printf 'xdg-mime-default\t%s\tPRESENT\thandler=%s\n' "$mt" "$handler" >> "$out"
+            fi
+        done
+    fi
+    return 0
+}
+
+# Pretty-print a before/after diff. Reads two snapshot TSVs.
+# Categories with REMOVED rows -> green/ok. Still-PRESENT rows -> warn.
+# New rows in after but not before -> warn (something appeared mid-run).
+_print_state_diff() {
+    local before="$1" after="$2"
+    local before_count after_count removed_count still_count new_count
+    before_count=$(wc -l < "$before" 2>/dev/null || echo 0)
+    after_count=$(wc -l  < "$after"  2>/dev/null || echo 0)
+    # Use sort+comm on the (category,key,detail) tuple. Drop the status
+    # column because it's always PRESENT at probe time.
+    local b_keys a_keys
+    b_keys=$(mktemp); a_keys=$(mktemp)
+    awk -F'\t' '{print $1"\t"$2"\t"$4}' "$before" | sort -u > "$b_keys"
+    awk -F'\t' '{print $1"\t"$2"\t"$4}' "$after"  | sort -u > "$a_keys"
+    removed_count=$(comm -23 "$b_keys" "$a_keys" | wc -l)
+    still_count=$(  comm -12 "$b_keys" "$a_keys" | wc -l)
+    new_count=$(    comm -13 "$b_keys" "$a_keys" | wc -l)
+
+    log_info "[01][verify] ============================================================"
+    log_info "[01][verify] BEFORE/AFTER cleanup state diff"
+    log_info "[01][verify] ============================================================"
+    log_info "[01][verify]   before: $before_count finding(s)"
+    log_info "[01][verify]   after:  $after_count finding(s)"
+    log_info "[01][verify]   ---"
+    if [ "$removed_count" -gt 0 ]; then
+        log_ok   "[01][verify]   REMOVED:    $removed_count  (cleaned up successfully)"
+    else
+        log_info "[01][verify]   REMOVED:    0"
+    fi
+    if [ "$still_count" -gt 0 ]; then
+        log_warn "[01][verify]   STILL PRESENT: $still_count  (NOT removed -- see list below)"
+    else
+        log_ok   "[01][verify]   STILL PRESENT: 0  (all targeted entries gone)"
+    fi
+    if [ "$new_count" -gt 0 ]; then
+        log_warn "[01][verify]   NEW:        $new_count  (appeared between snapshots)"
+    fi
+    log_info "[01][verify] ============================================================"
+
+    if [ "$removed_count" -gt 0 ]; then
+        log_info "[01][verify] --- REMOVED entries ---"
+        comm -23 "$b_keys" "$a_keys" | while IFS=$'\t' read -r cat key det; do
+            log_ok "[01][verify]   [-] $cat :: $key  ($det)"
+        done
+    fi
+    if [ "$still_count" -gt 0 ]; then
+        log_info "[01][verify] --- STILL PRESENT entries ---"
+        comm -12 "$b_keys" "$a_keys" | while IFS=$'\t' read -r cat key det; do
+            log_warn "[01][verify]   [!] $cat :: $key  ($det)"
+        done
+    fi
+    if [ "$new_count" -gt 0 ]; then
+        log_info "[01][verify] --- NEW entries ---"
+        comm -13 "$b_keys" "$a_keys" | while IFS=$'\t' read -r cat key det; do
+            log_warn "[01][verify]   [+] $cat :: $key  ($det)"
+        done
+    fi
+    rm -f "$b_keys" "$a_keys"
+
+    # Final verdict.
+    if [ "$still_count" -eq 0 ] && [ "$new_count" -eq 0 ] && [ "$before_count" -gt 0 ]; then
+        log_ok "[01][verify] VERDICT: clean -- no VS Code context-menu / MIME residue detected"
+        return 0
+    fi
+    if [ "$before_count" -eq 0 ] && [ "$after_count" -eq 0 ]; then
+        log_ok "[01][verify] VERDICT: clean -- nothing was present before or after"
+        return 0
+    fi
+    log_warn "[01][verify] VERDICT: residue remains -- see STILL PRESENT list above"
+    return 1
+}
+
+# Standalone verify verb -- single read-only snapshot, no diff.
+verb_verify() {
+    local snap
+    snap=$(mktemp)
+    log_info "[01][verify] Probing context-menu + MIME state (read-only)..."
+    _collect_state_snapshot "$snap"
+    local n
+    n=$(wc -l < "$snap" 2>/dev/null || echo 0)
+    if [ "$n" -eq 0 ]; then
+        log_ok "[01][verify] No VS Code context-menu / MIME entries found on this system"
+        rm -f "$snap"
+        return 0
+    fi
+    log_warn "[01][verify] Found $n VS Code-related entries:"
+    awk -F'\t' '{printf "[01][verify]   [*] %s :: %s  (%s)\n", $1, $2, $4}' "$snap" >&2
+    rm -f "$snap"
+    return 0
+}
+
 verb_uninstall() {
   _resolve_install_scope
+  # BEFORE snapshot.
+  local _before_snap _after_snap
+  _before_snap=$(mktemp)
+  _after_snap=$(mktemp)
+  log_info "[01][verify] Capturing BEFORE snapshot..."
+  _collect_state_snapshot "$_before_snap"
+  log_info "[01][verify] BEFORE: $(wc -l < "$_before_snap") finding(s) recorded"
+
   if is_apt_pkg_installed code; then sudo apt-get remove -y code; fi
   if is_snap_pkg_installed code; then sudo snap remove code; fi
   _clean_mime_defaults
   _clean_vscode_desktop_entries
   _clean_context_menu_entries
+
+  # AFTER snapshot + diff.
+  log_info "[01][verify] Capturing AFTER snapshot..."
+  _collect_state_snapshot "$_after_snap"
+  _print_state_diff "$_before_snap" "$_after_snap" || true
+  rm -f "$_before_snap" "$_after_snap"
+
   # Only delete the fingerprint AFTER the cleaners have used it.
   rm -f "$FINGERPRINT_FILE"
   rm -f "$INSTALLED_MARK"
@@ -774,5 +1044,6 @@ case "${1:-install}" in
   repair)    verb_repair ;;
   uninstall) verb_uninstall ;;
   scope)     verb_scope ;;
+  verify)    verb_verify ;;
   *) log_err "[01] Unknown verb: $1"; exit 2 ;;
 esac
