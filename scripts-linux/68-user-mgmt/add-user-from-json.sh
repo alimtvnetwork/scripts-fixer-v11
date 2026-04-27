@@ -16,6 +16,132 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/helpers/_common.sh"
 
+# --- Strict JSON-schema validation (added v0.170.0) ----------------------
+# Allowed top-level fields per record. Anything outside this set triggers
+# a "schemaUnknownField" warning (typo guard) but does NOT reject the
+# record on its own -- the user can still opt in to strict-mode rejection
+# via UM_STRICT_UNKNOWN=1.
+UM_ALLOWED_FIELDS="name password passwordFile uid shell home comment primaryGroup groups sudo system sshKeys sshKeyFiles"
+
+# Validate one record's schema. Emits TSV error rows on stdout:
+#   ERROR<TAB>field<TAB>reason
+#   WARN <TAB>field<TAB>reason
+# Caller counts ERROR rows; >0 => reject the record.
+#
+# Type rules (jq's type names: string|number|boolean|array|object|null):
+#   name           REQUIRED string non-empty
+#   password       OPTIONAL string non-empty (if present)
+#   passwordFile   OPTIONAL string non-empty
+#   uid            OPTIONAL number OR numeric-string
+#   shell          OPTIONAL string non-empty
+#   home           OPTIONAL string non-empty
+#   comment        OPTIONAL string (may be empty)
+#   primaryGroup   OPTIONAL string non-empty
+#   groups         OPTIONAL array of non-empty strings
+#   sudo           OPTIONAL boolean
+#   system         OPTIONAL boolean
+#   sshKeys        OPTIONAL array of non-empty strings
+#   sshKeyFiles    OPTIONAL array of non-empty strings
+_validate_user_record() {
+    local rec="$1"
+    # Top-level shape.
+    local toptype
+    toptype=$(jq -r 'type' <<< "$rec")
+    if [ "$toptype" != "object" ]; then
+        printf 'ERROR\t<root>\tnot an object (got %s)\n' "$toptype"
+        return 0
+    fi
+
+    # Single jq pass that emits one TSV row per problem found.
+    # Using a jq program (not multiple invocations) so a 50-record file
+    # validates in ~50 jq calls instead of ~600.
+    jq -r --arg allowed "$UM_ALLOWED_FIELDS" '
+        def expect(field; want):
+            if has(field) then
+                (.[field] | type) as $t
+                | if $t != want then
+                      "ERROR\t\(field)\twrong type: expected \(want), got \($t)"
+                  else empty end
+            else empty end;
+
+        def expect_nonempty_string(field):
+            if has(field) then
+                (.[field]) as $v | ($v | type) as $t
+                | if $t == "null" then
+                      "ERROR\t\(field)\tnull value"
+                  elif $t != "string" then
+                      "ERROR\t\(field)\twrong type: expected string, got \($t)"
+                  elif ($v | length) == 0 then
+                      "ERROR\t\(field)\tempty string"
+                  else empty end
+            else empty end;
+
+        def expect_uid(field):
+            if has(field) then
+                (.[field]) as $v | ($v | type) as $t
+                | if $t == "number" then
+                      if ($v | floor) != $v or $v < 0 then
+                          "ERROR\t\(field)\tnot a non-negative integer (\($v))"
+                      else empty end
+                  elif $t == "string" then
+                      if ($v | test("^[0-9]+$")) then empty
+                      else "ERROR\t\(field)\tstring is not numeric (\($v))" end
+                  else
+                      "ERROR\t\(field)\twrong type: expected integer or numeric string, got \($t)"
+                  end
+            else empty end;
+
+        def expect_str_array(field):
+            if has(field) then
+                (.[field]) as $arr | ($arr | type) as $t
+                | if $t != "array" then
+                      "ERROR\t\(field)\twrong type: expected array, got \($t) -- did you forget the [...] brackets?"
+                  else
+                      $arr
+                      | to_entries
+                      | map(
+                          (.value | type) as $vt
+                          | if $vt != "string" then
+                                "ERROR\t\(field)[\(.key)]\twrong type: expected non-empty string, got \($vt) (value=\(.value | tostring | .[0:80]))"
+                            elif (.value | length) == 0 then
+                                "ERROR\t\(field)[\(.key)]\tempty string"
+                            else empty end
+                        )
+                      | .[]
+                  end
+            else empty end;
+
+        # Required: name.
+        ( if has("name") | not then
+              "ERROR\tname\tmissing required field"
+          else empty end ),
+        expect_nonempty_string("name"),
+
+        # Optional scalars.
+        expect_nonempty_string("password"),
+        expect_nonempty_string("passwordFile"),
+        expect_nonempty_string("shell"),
+        expect_nonempty_string("home"),
+        expect("comment"; "string"),
+        expect_nonempty_string("primaryGroup"),
+        expect_uid("uid"),
+        expect("sudo"; "boolean"),
+        expect("system"; "boolean"),
+
+        # Arrays.
+        expect_str_array("groups"),
+        expect_str_array("sshKeys"),
+        expect_str_array("sshKeyFiles"),
+
+        # Unknown-field warnings (typo guard).
+        ( ($allowed | split(" ")) as $known
+          | keys[]
+          | select(. as $k | ($known | index($k)) | not)
+          | "WARN\t\(.)\tunknown field (allowed: \($allowed))"
+        )
+    ' <<< "$rec" 2>/dev/null
+}
+
 um_usage() {
   cat <<EOF
 Usage: add-user-from-json.sh <file.json> [--dry-run]
@@ -88,12 +214,67 @@ rc_total=0
 i=0
 while [ "$i" -lt "$count" ]; do
   rec=$(jq -c ".[$i]" <<< "$normalised")
-  name=$(jq -r '.name // empty'         <<< "$rec")
-  if [ -z "$name" ]; then
-    log_err "$(um_msg jsonRecordBad "$i" "$UM_FILE" "name")"
+
+  # ---- Strict schema validation (v0.170.0) ----
+  # Run validator, capture all error/warn rows, then report each one
+  # with a properly-templated log line. No silent skips.
+  validation_out=$(_validate_user_record "$rec")
+  err_count=0
+  if [ -n "$validation_out" ]; then
+    while IFS=$'\t' read -r severity field reason; do
+      [ -z "$severity" ] && continue
+      case "$severity" in
+        ERROR)
+          err_count=$((err_count+1))
+          # Disambiguate empty/missing/type/array errors into the right template.
+          case "$reason" in
+            "missing required field")
+              log_err "$(um_msg jsonRecordBad "$i" "$UM_FILE" "$field")" ;;
+            "empty string"|"null value")
+              log_err "$(um_msg schemaFieldEmpty "$i" "$UM_FILE" "$field")" ;;
+            wrong\ type:*)
+              # reason format: "wrong type: expected X, got Y" or "...(value=...)".
+              # For array-item errors the field already contains "name[idx]".
+              if printf '%s' "$field" | grep -qE '\[[0-9]+\]$'; then
+                base="${field%[*}"; idx="${field##*[}"; idx="${idx%]}"
+                got=$(printf '%s' "$reason" | sed -nE 's/.*got ([a-z]+).*/\1/p')
+                val=$(printf '%s' "$reason" | sed -nE 's/.*value=(.*)\)$/\1/p')
+                log_err "$(um_msg schemaArrayItemType "$i" "$UM_FILE" "$base" "$idx" "$got" "$val")"
+              else
+                expected=$(printf '%s' "$reason" | sed -nE 's/.*expected ([^,]+),.*/\1/p')
+                got=$(printf '%s'      "$reason" | sed -nE 's/.*got ([a-z]+).*/\1/p')
+                log_err "$(um_msg schemaFieldType "$i" "$UM_FILE" "$field" "$expected" "$got")"
+              fi ;;
+            *)
+              # Generic fall-through for messages like "not a non-negative integer (X)"
+              # or "string is not numeric (X)".
+              log_err "JSON record #$i in '$UM_FILE' field '$field': $reason (failure: rejecting record)"
+              ;;
+          esac
+          ;;
+        WARN)
+          log_warn "$(um_msg schemaUnknownField "$i" "$UM_FILE" "$field" "$UM_ALLOWED_FIELDS")"
+          ;;
+      esac
+    done <<< "$validation_out"
+  fi
+
+  # name is needed for the rejection summary line; pull it AFTER validation
+  # so we don't crash on records missing the field. Guard against records
+  # that aren't objects at all (e.g. bare strings/numbers) -- jq can't
+  # .name a string.
+  if [ "$(jq -r 'type' <<< "$rec")" = "object" ]; then
+    name=$(jq -r '.name // "<missing>"' <<< "$rec")
+  else
+    name="<not-an-object>"
+  fi
+
+  if [ "$err_count" -gt 0 ]; then
+    log_err "$(um_msg schemaRecordRejected "$i" "$UM_FILE" "$name" "$err_count")"
     rc_total=1
     i=$((i+1)); continue
   fi
+
   pw=$(jq -r       '.password // empty'      <<< "$rec")
   pwfile=$(jq -r   '.passwordFile // empty'  <<< "$rec")
   uid=$(jq -r      '.uid // empty'           <<< "$rec")
@@ -124,25 +305,23 @@ while [ "$i" -lt "$count" ]; do
   #   sshKeyFiles  : array of paths to .pub files on this host
   # Both are optional. Both fan out to repeatable --ssh-key / --ssh-key-file
   # flags. Empty arrays are no-ops (same as omitting the field entirely).
-  if jq -e 'has("sshKeys") and (.sshKeys|type=="array")' <<< "$rec" >/dev/null 2>&1; then
+  # NB: type/empty validation already happened above in _validate_user_record;
+  # if we got here the arrays (when present) are guaranteed array-of-non-empty-string.
+  if jq -e 'has("sshKeys")' <<< "$rec" >/dev/null 2>&1; then
     n=$(jq '.sshKeys | length' <<< "$rec")
     j=0
     while [ "$j" -lt "$n" ]; do
       kv=$(jq -r ".sshKeys[$j]" <<< "$rec")
-      if [ -n "$kv" ] && [ "$kv" != "null" ]; then
-        args+=(--ssh-key "$kv")
-      fi
+      args+=(--ssh-key "$kv")
       j=$((j+1))
     done
   fi
-  if jq -e 'has("sshKeyFiles") and (.sshKeyFiles|type=="array")' <<< "$rec" >/dev/null 2>&1; then
+  if jq -e 'has("sshKeyFiles")' <<< "$rec" >/dev/null 2>&1; then
     n=$(jq '.sshKeyFiles | length' <<< "$rec")
     j=0
     while [ "$j" -lt "$n" ]; do
       fv=$(jq -r ".sshKeyFiles[$j]" <<< "$rec")
-      if [ -n "$fv" ] && [ "$fv" != "null" ]; then
-        args+=(--ssh-key-file "$fv")
-      fi
+      args+=(--ssh-key-file "$fv")
       j=$((j+1))
     done
   fi
