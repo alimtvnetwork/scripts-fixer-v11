@@ -91,15 +91,17 @@ const Settings = () => {
 
   const handleSaveToBridge = async () => {
     setIsSaving(true);
+    // PATCH = deep-merge the chosen options into the stored config model.
+    // The bridge returns the updated config JSON in `data.config`.
     const endpoint = `${bridgeUrl.replace(/\/$/, "")}/config?script=${SCRIPT_ID}`;
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (bridgeToken) headers["X-Bridge-Token"] = bridgeToken;
 
       const res = await fetch(endpoint, {
-        method: "POST",
+        method: "PATCH",
         headers,
-        body: JSON.stringify(merged, null, 2),
+        body: JSON.stringify(merged),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -113,9 +115,16 @@ const Settings = () => {
         throw new Error(`path: ${path} — reason: ${reason}`);
       }
 
+      const savedPath = (data as { path?: string }).path ?? CONFIG_PATH;
+      const bytes = (data as { bytes?: number }).bytes ?? "?";
+      const updated = (data as { config?: unknown }).config;
+      if (updated !== undefined) {
+        // eslint-disable-next-line no-console
+        console.info("[bridge] updated config:", updated);
+      }
       toast({
         title: "Saved to local config.json",
-        description: `${(data as { path?: string }).path ?? CONFIG_PATH} (${(data as { bytes?: number }).bytes ?? "?"} bytes)`,
+        description: `${savedPath} (${bytes} bytes) — options merged into stored config`,
       });
       setBridgeStatus("online");
     } catch (err) {
