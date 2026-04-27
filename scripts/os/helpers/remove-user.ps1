@@ -85,41 +85,13 @@ if (-not ($forwardArgs -contains "--yes")) { $forwardArgs += "--yes" }
 $isAdminOk = Assert-Admin -ScriptPath $MyInvocation.MyCommand.Definition -ForwardArgs $forwardArgs -LogMessages $logMessages
 if (-not $isAdminOk) { Save-LogFile -Status "fail"; exit 1 }
 
-$user = $null
-try { $user = Get-LocalUser -Name $Name -ErrorAction Stop } catch {
-    Write-Log "User '$Name' not found. Failure: $($_.Exception.Message). Path: HKLM:\SAM (local users)" -Level "warn"
-    Save-LogFile -Status "ok"; exit 0
-}
-$sid = $user.SID.Value
-
-try {
-    Remove-LocalUser -Name $Name -ErrorAction Stop
-    Write-Log "Removed local user '$Name' (SID $sid)." -Level "success"
-} catch {
-    Write-Log "Failed to remove '$Name': $($_.Exception.Message)" -Level "fail"
-    Save-LogFile -Status "fail"; exit 1
-}
+# Delegate to shared helpers (parity with um_user_delete + um_purge_home).
+$result = Invoke-UserDelete -Name $Name -PassThru
+if (-not $result.Success) { Save-LogFile -Status "fail"; exit 1 }
 
 if ($purge) {
-    $profilePath = "C:\Users\$Name"
-    try {
-        $regKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid"
-        if (Test-Path $regKey) {
-            $pp = (Get-ItemProperty $regKey -ErrorAction SilentlyContinue).ProfileImagePath
-            if ($pp) { $profilePath = $pp }
-            Remove-Item -Path $regKey -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    } catch {}
-    if (Test-Path $profilePath) {
-        try {
-            Remove-Item -LiteralPath $profilePath -Recurse -Force -ErrorAction Stop
-            Write-Log "Deleted profile folder '$profilePath'." -Level "success"
-        } catch {
-            Write-Log "Failed to delete profile folder. Path: $profilePath. Reason: $($_.Exception.Message)" -Level "fail"
-            Save-LogFile -Status "fail"; exit 1
-        }
-    } else {
-        Write-Log "Profile folder not present at '$profilePath' -- nothing to purge." -Level "info"
+    if (-not (Invoke-PurgeHome -ProfilePath $result.ProfilePath)) {
+        Save-LogFile -Status "fail"; exit 1
     }
 }
 
