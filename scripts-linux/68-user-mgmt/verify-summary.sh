@@ -256,7 +256,7 @@ if [ "$_have_glob_intent" = "1" ]; then
     exit 2
   fi
 
-  if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ]; then
+  if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ] && [ "$_vs_results_to_stdout" != "1" ]; then
     _patstr=$(printf "'%s' " "${_eff_globs[@]}")
     log_info "$(um_msg summaryDiscoveryBegin "$_eff_root" "${_patstr% }" "$_eff_recursive" "$_eff_follow")"
   fi
@@ -316,7 +316,7 @@ if [ "$_have_glob_intent" = "1" ]; then
       fi
     done
 
-    if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ]; then
+    if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ] && [ "$_vs_results_to_stdout" != "1" ]; then
       log_info "$(um_msg summaryDiscoveryMatch "$_added_for_pat" "$_gp")"
     fi
     [ "$_cap_hit" = "1" ] && break
@@ -328,7 +328,7 @@ if [ "$_have_glob_intent" = "1" ]; then
     log_warn "$(um_msg summaryDiscoveryCapHit "$_vs_default_max" "$_eff_root")"
   fi
 
-  if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ]; then
+  if [ "$VS_JSON" != "1" ] && [ "$VS_QUIET" != "1" ] && [ "$_vs_results_to_stdout" != "1" ]; then
     log_info "$(um_msg summaryDiscoveryTotal "$_discover_total" "${#_eff_globs[@]}" "$_eff_root")"
   fi
 
