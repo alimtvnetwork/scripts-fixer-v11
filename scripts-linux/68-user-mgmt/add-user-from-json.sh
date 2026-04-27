@@ -260,8 +260,14 @@ while [ "$i" -lt "$count" ]; do
   fi
 
   # name is needed for the rejection summary line; pull it AFTER validation
-  # so we don't crash on records missing the field.
-  name=$(jq -r '.name // "<missing>"' <<< "$rec")
+  # so we don't crash on records missing the field. Guard against records
+  # that aren't objects at all (e.g. bare strings/numbers) -- jq can't
+  # .name a string.
+  if [ "$(jq -r 'type' <<< "$rec")" = "object" ]; then
+    name=$(jq -r '.name // "<missing>"' <<< "$rec")
+  else
+    name="<not-an-object>"
+  fi
 
   if [ "$err_count" -gt 0 ]; then
     log_err "$(um_msg schemaRecordRejected "$i" "$UM_FILE" "$name" "$err_count")"
