@@ -214,12 +214,61 @@ rc_total=0
 i=0
 while [ "$i" -lt "$count" ]; do
   rec=$(jq -c ".[$i]" <<< "$normalised")
-  name=$(jq -r '.name // empty'         <<< "$rec")
-  if [ -z "$name" ]; then
-    log_err "$(um_msg jsonRecordBad "$i" "$UM_FILE" "name")"
+
+  # ---- Strict schema validation (v0.170.0) ----
+  # Run validator, capture all error/warn rows, then report each one
+  # with a properly-templated log line. No silent skips.
+  validation_out=$(_validate_user_record "$rec")
+  err_count=0
+  if [ -n "$validation_out" ]; then
+    while IFS=$'\t' read -r severity field reason; do
+      [ -z "$severity" ] && continue
+      case "$severity" in
+        ERROR)
+          err_count=$((err_count+1))
+          # Disambiguate empty/missing/type/array errors into the right template.
+          case "$reason" in
+            "missing required field")
+              log_err "$(um_msg jsonRecordBad "$i" "$UM_FILE" "$field")" ;;
+            "empty string"|"null value")
+              log_err "$(um_msg schemaFieldEmpty "$i" "$UM_FILE" "$field")" ;;
+            wrong\ type:*)
+              # reason format: "wrong type: expected X, got Y" or "...(value=...)".
+              # For array-item errors the field already contains "name[idx]".
+              if printf '%s' "$field" | grep -qE '\[[0-9]+\]$'; then
+                base="${field%[*}"; idx="${field##*[}"; idx="${idx%]}"
+                got=$(printf '%s' "$reason" | sed -nE 's/.*got ([a-z]+).*/\1/p')
+                val=$(printf '%s' "$reason" | sed -nE 's/.*value=(.*)\)$/\1/p')
+                log_err "$(um_msg schemaArrayItemType "$i" "$UM_FILE" "$base" "$idx" "$got" "$val")"
+              else
+                expected=$(printf '%s' "$reason" | sed -nE 's/.*expected ([^,]+),.*/\1/p')
+                got=$(printf '%s'      "$reason" | sed -nE 's/.*got ([a-z]+).*/\1/p')
+                log_err "$(um_msg schemaFieldType "$i" "$UM_FILE" "$field" "$expected" "$got")"
+              fi ;;
+            *)
+              # Generic fall-through for messages like "not a non-negative integer (X)"
+              # or "string is not numeric (X)".
+              log_err "JSON record #$i in '$UM_FILE' field '$field': $reason (failure: rejecting record)"
+              ;;
+          esac
+          ;;
+        WARN)
+          log_warn "$(um_msg schemaUnknownField "$i" "$UM_FILE" "$field" "$UM_ALLOWED_FIELDS")"
+          ;;
+      esac
+    done <<< "$validation_out"
+  fi
+
+  # name is needed for the rejection summary line; pull it AFTER validation
+  # so we don't crash on records missing the field.
+  name=$(jq -r '.name // "<missing>"' <<< "$rec")
+
+  if [ "$err_count" -gt 0 ]; then
+    log_err "$(um_msg schemaRecordRejected "$i" "$UM_FILE" "$name" "$err_count")"
     rc_total=1
     i=$((i+1)); continue
   fi
+
   pw=$(jq -r       '.password // empty'      <<< "$rec")
   pwfile=$(jq -r   '.passwordFile // empty'  <<< "$rec")
   uid=$(jq -r      '.uid // empty'           <<< "$rec")
@@ -250,25 +299,23 @@ while [ "$i" -lt "$count" ]; do
   #   sshKeyFiles  : array of paths to .pub files on this host
   # Both are optional. Both fan out to repeatable --ssh-key / --ssh-key-file
   # flags. Empty arrays are no-ops (same as omitting the field entirely).
-  if jq -e 'has("sshKeys") and (.sshKeys|type=="array")' <<< "$rec" >/dev/null 2>&1; then
+  # NB: type/empty validation already happened above in _validate_user_record;
+  # if we got here the arrays (when present) are guaranteed array-of-non-empty-string.
+  if jq -e 'has("sshKeys")' <<< "$rec" >/dev/null 2>&1; then
     n=$(jq '.sshKeys | length' <<< "$rec")
     j=0
     while [ "$j" -lt "$n" ]; do
       kv=$(jq -r ".sshKeys[$j]" <<< "$rec")
-      if [ -n "$kv" ] && [ "$kv" != "null" ]; then
-        args+=(--ssh-key "$kv")
-      fi
+      args+=(--ssh-key "$kv")
       j=$((j+1))
     done
   fi
-  if jq -e 'has("sshKeyFiles") and (.sshKeyFiles|type=="array")' <<< "$rec" >/dev/null 2>&1; then
+  if jq -e 'has("sshKeyFiles")' <<< "$rec" >/dev/null 2>&1; then
     n=$(jq '.sshKeyFiles | length' <<< "$rec")
     j=0
     while [ "$j" -lt "$n" ]; do
       fv=$(jq -r ".sshKeyFiles[$j]" <<< "$rec")
-      if [ -n "$fv" ] && [ "$fv" != "null" ]; then
-        args+=(--ssh-key-file "$fv")
-      fi
+      args+=(--ssh-key-file "$fv")
       j=$((j+1))
     done
   fi
