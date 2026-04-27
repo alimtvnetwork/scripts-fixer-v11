@@ -45,6 +45,17 @@ Usage:
       Roll back from a specific manifest file (useful when the manifest
       lives outside the default dir, e.g. on a backup volume).
 
+  remove-ssh-keys.sh --prune [--older-than DAYS] [--keep-last N]
+                              [--max-total N] [--dry-run]
+                              [--manifest-dir DIR]
+      Retention-based cleanup of the manifest dir. All three policies
+      are OR-combined; pass 0 to disable a specific one. Defaults come
+      from config.json (manifestRetention.*).
+        --older-than DAYS    delete manifests with mtime older than DAYS
+        --keep-last N        keep only the N most recent PER USER
+        --max-total N        cap the total file count in the dir
+      Corrupt manifests are SKIPPED, never deleted (forensics preserved).
+
 Options:
   --dry-run         Show what would be removed; touch nothing.
   --keep-manifest   Do NOT delete the manifest after a successful
