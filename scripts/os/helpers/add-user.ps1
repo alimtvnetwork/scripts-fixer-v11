@@ -23,6 +23,36 @@
     Per locked decision: password is passed as a plain CLI arg
     (visible in shell history -- accepted risk). PIN cannot be set
     non-interactively on modern Windows; a hint file is written.
+
+    Dry-run effect per flag (with --dry-run, every mutating call is
+    routed through Invoke-UserModify and logged as
+    "[dry-run] <command>"; the host is NOT modified and admin rights
+    are not strictly required to PREVIEW the plan):
+      <name>                      would call New-LocalUser to create the
+                                  account; existing account -> [WARN] +
+                                  group / hint sync still proceeds in
+                                  plan mode
+      <pass>                      would call Set-LocalUser -Password
+                                  <masked>; the value is NEVER logged
+      [pin]                       would write the PIN hint file under the
+                                  user profile (no Windows Hello mutation)
+      [email]                     would write the Microsoft-account hint
+                                  file and emit a [NOTICE] log line
+      --admin / --standard        would call Add-LocalGroupMember -Group
+                                  Administrators (or Users)
+      --microsoft-account <email> same as [email] -- writes the hint file
+                                  only; never alters MSA linkage
+      --ms-account-on-logon       would queue a one-shot HKCU RunOnce
+                                  entry pointing at ms-settings:emailand-
+                                  accounts; in dry-run the registry write
+                                  is logged but skipped
+      --ask                       prompt happens BEFORE the dry-run
+                                  banner; collected values still drive
+                                  the would-do log lines
+      --dry-run                   this flag itself; emits the dry-run
+                                  banner and gates every New-LocalUser /
+                                  Set-LocalUser / Add-LocalGroupMember /
+                                  registry call
 #>
 param(
     [Parameter(ValueFromRemainingArguments = $true)]
