@@ -124,3 +124,19 @@ type: feature
 - **Per-method post-install hooks**: snap installs need
   `snap connect code:removable-media` etc. Add a `postInstallHooks`
   block keyed by method.
+
+## Script 01 — verification (added v0.169.0)
+
+- **JSON output mode** (`./run.sh verify --json`) so other scripts
+  (Lovable Cloud function, dashboard tile) can consume the snapshot.
+- **Persist snapshots** to `.installed/01.verify-<timestamp>.tsv` so
+  multiple uninstall runs can be compared longitudinally.
+- **Exit codes**: today `verb_verify` always returns 0; switch to
+  exit 1 when residue is found, exit 2 on probe error. Lets CI gate on it.
+- **`xdg-mime query` for ALL registered text mimes** instead of the
+  curated 11-entry list — use `xdg-mime query` with the output of
+  `awk -F= '/MimeType=/' code.desktop` to be exhaustive.
+- **Probe KDE Plasma** (`~/.local/share/kservices5/ServiceMenus/`,
+  `~/.config/kdeglobals` `[General]Keyboard` defaults).
+- **Probe Plasma activity-aware MIME defaults** in
+  `~/.config/plasma-org.kde.plasma.desktop-appletsrc`.
