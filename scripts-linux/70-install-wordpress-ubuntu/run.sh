@@ -281,6 +281,10 @@ _install_all() {
     [ $rc -eq 0 ] && _install_http               || rc=$?
     [ $rc -eq 0 ] && component_wordpress_install || rc=$?
     [ $rc -eq 0 ] && component_firewall_install  || rc=$?
+    # HTTPS runs AFTER firewall so port 443 (and the redirected :80 traffic)
+    # can reach this host before certbot tries the http-01 challenge.
+    # Skipped automatically when WP_HTTPS=0.
+    [ $rc -eq 0 ] && component_https_install     || rc=$?
     if [ $rc -eq 0 ]; then
         # HTTP-loads check is best-effort: don't fail the whole install if
         # the wizard page isn't reachable yet (DNS, container networking).
@@ -306,9 +310,16 @@ _check_all() {
     if [ "${WP_FIREWALL:-0}" = "1" ]; then
         component_firewall_verify && log_ok "[70][verify] firewall OK" || { log_err "[70][verify] firewall FAILED (port ${WP_SITE_PORT}/tcp not allowed in UFW)"; rc=1; }
     fi
+    if [ "${WP_HTTPS:-0}" = "1" ] || [ -f "$ROOT/.installed/70-https.ok" ]; then
+        component_https_verify && log_ok "[70][verify] https OK" || { log_err "[70][verify] https FAILED (no cert lineage for ${WP_SERVER_NAME%% *})"; rc=1; }
+    fi
     if [ $rc -eq 0 ]; then
         log_ok "[70][verify] OK -- all components reachable"
-        log_info "[70][verify] site: http://${WP_SERVER_NAME}:${WP_SITE_PORT}/"
+        if [ "${WP_HTTPS:-0}" = "1" ] || [ -f "$ROOT/.installed/70-https.ok" ]; then
+            log_info "[70][verify] site: https://${WP_SERVER_NAME%% *}/"
+        else
+            log_info "[70][verify] site: http://${WP_SERVER_NAME%% *}:${WP_SITE_PORT}/"
+        fi
     else
         log_err "[70][verify] FAILED -- see lines above for the failing component"
     fi
@@ -317,9 +328,12 @@ _check_all() {
 
 _uninstall_all() {
     log_info "[70][uninstall] === uninstall stage start ==="
-    log_info "[70][uninstall] removing: WordPress files, DB, web vhost (nginx & apache), firewall rule"
+    log_info "[70][uninstall] removing: WordPress files, DB, web vhost (nginx & apache), firewall rule, HTTPS certs"
     log_info "[70][uninstall] PRESERVING: PHP packages, MySQL/MariaDB packages and data"
     local rc=0
+    # HTTPS first so we revoke certs while nginx/apache still has the vhost
+    # certbot recognizes (avoids 'no installer' warnings).
+    component_https_uninstall    || rc=$?
     component_wordpress_uninstall || rc=$?
     component_firewall_uninstall  || rc=$?
     component_nginx_uninstall     || rc=$?
