@@ -198,3 +198,22 @@ Every failure logs via `log_file_error path='...' reason='...'` (CODE RED).
 Verified end-to-end with 7 unit-test scenarios: 1 clean pass + 6 distinct
 failure modes (wrong DB pass, leftover placeholder, duplicate salts,
 shipped placeholder salt, missing salt, missing end marker).
+
+### Download integrity check (v0.178.0)
+`components/wordpress.sh` adds `_wp_verify_download <file> <url>`, called
+immediately after both download paths (ZIP primary + tar.gz fallback) and
+BEFORE any extraction so a tampered/corrupt archive never touches the host.
+Algorithm choice: WordPress.org publishes `<url>.sha1` and `<url>.md5`
+but **NOT** `<url>.sha256` (confirmed via 404). Implementation uses:
+1. Local SHA256 logged for audit trail (no remote to compare against).
+2. SHA1 vs `<url>.sha1` -- primary integrity gate. Mismatch = abort.
+3. MD5 vs `<url>.md5` -- redundant secondary gate. Mismatch = abort.
+4. Strict by default: missing checksum URL aborts. Set
+   `WP_SKIP_CHECKSUM=1` to fall back to a warning (operator escape hatch
+   for networks that block the checksum URLs but mirror the archive).
+5. Empty/missing local file is caught before any network call.
+On failure the corrupt archive is left in place at `/tmp/wordpress-latest-*.zip`
+for forensics. Verified against live wordpress.org with 5 scenarios:
+clean pass, 1-byte corruption (SHA1 mismatch caught with exact expected/got),
+missing checksum URL strict (abort), missing checksum URL with skip flag
+(warn + continue), and empty file (fail fast).
